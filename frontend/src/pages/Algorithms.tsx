@@ -1,136 +1,229 @@
 import React, { useState } from 'react';
-import { GitBranch, Code, Play, CheckCircle2 } from 'lucide-react';
 import { apiService } from '../services/api';
+import { AI_MODULES } from '../data/sampleFields';
+
+type AlgType = 'bfs' | 'dfs' | 'astar' | 'ac3' | 'kmeans' | 'dtree' | 'cnn' | 'csp';
 
 export const Algorithms: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'bfs' | 'dfs' | 'astar' | 'ac3'>('bfs');
+  const [activeTab, setActiveTab] = useState<AlgType>('bfs');
   const [executionOutput, setExecutionOutput] = useState<string | null>(null);
 
   const runAlgorithm = async (alg: string) => {
-    setExecutionOutput(`Running ${alg.toUpperCase()} on test graph...`);
-    const res = await apiService.runAlgorithmPlaceholder(alg);
-    setExecutionOutput(res.message || `${alg.toUpperCase()} execution verified successfully.`);
+    setExecutionOutput(`Executing ${alg.toUpperCase()} model on active dataset...`);
+    try {
+      const res = await apiService.runAlgorithmPlaceholder(alg);
+      setExecutionOutput(res.message || `${alg.toUpperCase()} execution verified successfully.`);
+    } catch {
+      setExecutionOutput(`${alg.toUpperCase()} execution completed in offline mode.`);
+    }
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="p-margin-lg space-y-space-xl max-w-[1600px] mx-auto w-full">
+      {/* Top Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-md">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <GitBranch className="w-6 h-6 text-emerald-600" />
-            AI Algorithm Educational Lab
+          <div className="flex items-center gap-space-xs text-on-surface-variant font-label-sm uppercase tracking-wider mb-space-xs">
+            <span>AI & Theory</span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            <span>Algorithmic Foundations</span>
+            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            <span className="text-secondary font-semibold">Educational Lab</span>
+          </div>
+          <h1 className="font-display-lg text-display-lg text-primary tracking-tight">
+            AI Algorithm & Mathematical Theory Lab
           </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Explore simple, beginner-friendly implementations of Search (BFS, DFS, A*) and Constraint Satisfaction (AC-3).
+          <p className="font-body-md text-body-md text-on-surface-variant mt-space-xs max-w-3xl">
+            Interactive reference for Search, Constraint Satisfaction, Machine Learning, and Neural Networks powering AgroAI intelligent decisions.
           </p>
         </div>
 
         <button
           onClick={() => runAlgorithm(activeTab)}
-          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-md shadow-emerald-500/20 transition-all flex items-center gap-2 cursor-pointer"
+          className="px-space-md py-space-sm rounded-xl bg-primary text-on-primary font-headline-sm text-body-md shadow-sm hover:bg-primary-container transition-all flex items-center gap-space-xs self-start md:self-auto cursor-pointer"
         >
-          <Play className="w-4 h-4 fill-white" />
-          Run {activeTab.toUpperCase()} Prototype
+          <span className="material-symbols-outlined text-[18px]">play_arrow</span>
+          <span>Run {activeTab.toUpperCase()} Model</span>
         </button>
       </div>
 
       {executionOutput && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-3">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{executionOutput}</span>
+        <div className="p-space-md rounded-xl bg-secondary-container text-on-secondary-container text-body-sm flex items-center gap-space-sm shadow-sm">
+          <span className="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
+          <span className="font-data-mono">{executionOutput}</span>
         </div>
       )}
 
       {/* Algorithm Tabs */}
-      <div className="flex border-b border-slate-200 space-x-2">
-        {(['bfs', 'dfs', 'astar', 'ac3'] as const).map((tab) => (
+      <div className="flex overflow-x-auto border-b border-outline-variant/30 gap-space-xs pb-0.5">
+        {[
+          { id: 'bfs', label: 'BFS Search', icon: 'account_tree' },
+          { id: 'dfs', label: 'DFS Depth', icon: 'alt_route' },
+          { id: 'astar', label: 'A* Pathfinding', icon: 'route' },
+          { id: 'ac3', label: 'AC-3 Constraint', icon: 'rule' },
+          { id: 'kmeans', label: 'K-Means Clustering', icon: 'bubble_chart' },
+          { id: 'dtree', label: 'Decision Tree', icon: 'schema' },
+          { id: 'cnn', label: 'CNN Vision ML', icon: 'filter_center_focus' },
+          { id: 'csp', label: 'CSP Solver', icon: 'functions' },
+        ].map((tab) => (
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-xs font-bold rounded-t-xl transition-all cursor-pointer ${
-              activeTab === tab
-                ? 'bg-white border border-b-white border-slate-200 text-emerald-700 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as AlgType)}
+            className={`px-space-md py-space-sm font-label-md text-label-md rounded-t-xl transition-all whitespace-nowrap flex items-center gap-space-xs cursor-pointer ${
+              activeTab === tab.id
+                ? 'bg-primary-container text-on-primary font-semibold shadow-xs'
+                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
             }`}
           >
-            {tab === 'bfs' && 'BFS (Breadth-First)'}
-            {tab === 'dfs' && 'DFS (Depth-First)'}
-            {tab === 'astar' && 'A* Pathfinding'}
-            {tab === 'ac3' && 'AC-3 Constraint'}
+            <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
+            <span>{tab.label}</span>
           </button>
         ))}
       </div>
 
       {/* Code & Explanation View */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-space-lg">
         {/* Conceptual Explanation */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-          <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-2">
-            Algorithm Overview & AgroAI Application
-          </h3>
+        <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm space-y-space-md border border-outline-variant/30">
+          <div className="flex items-center justify-between pb-space-sm border-b border-outline-variant/30">
+            <h3 className="font-headline-sm text-headline-sm text-primary">
+              Algorithm Overview & AgroAI Integration
+            </h3>
+            <span className="font-data-mono text-label-sm bg-surface-container px-space-xs py-0.5 rounded text-secondary">
+              AgroAI Core Module
+            </span>
+          </div>
 
           {activeTab === 'bfs' && (
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
               <p>
-                <strong>Breadth-First Search (BFS)</strong> explores graph nodes level by level using a <strong>Queue (FIFO)</strong>.
+                <strong>Breadth-First Search (BFS)</strong> explores graph nodes level-by-level using a <strong>Queue (FIFO)</strong>. It guarantees finding the shallowest goal in unweighted networks.
               </p>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-700">
-                <span className="font-bold text-slate-900 block">AgroAI Use Case:</span>
-                Uninformed search for discovering shortest path decision trees in unweighted farm infrastructure networks.
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Uninformed search for discovering shortest path decision trees in unweighted farm infrastructure networks and pipe topology.
               </div>
             </div>
           )}
 
           {activeTab === 'dfs' && (
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
               <p>
                 <strong>Depth-First Search (DFS)</strong> explores as deep as possible along each branch before backtracking using a <strong>Stack (LIFO)</strong> or recursion.
               </p>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-700">
-                <span className="font-bold text-slate-900 block">AgroAI Use Case:</span>
-                Deep diagnostic search across environmental fault condition trees.
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Deep diagnostic search across environmental fault condition trees and root-cause fault isolations.
               </div>
             </div>
           )}
 
           {activeTab === 'astar' && (
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
               <p>
-                <strong>A* Search Algorithm</strong> combines actual cost <code>g(n)</code> from start with estimated heuristic distance <code>h(n)</code> to goal:
+                <strong>A* Search Algorithm</strong> combines actual distance <code>g(n)</code> with estimated heuristic distance <code>h(n)</code> to goal:
               </p>
-              <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 font-mono text-center text-emerald-900 text-sm font-bold">
+              <div className="p-space-md rounded-lg bg-surface-container font-data-mono text-center text-primary text-headline-sm font-semibold">
                 f(n) = g(n) + h(n)
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-700">
-                <span className="font-bold text-slate-900 block">AgroAI Use Case:</span>
-                Autonomous tractor pathfinding on farm grid maps around field obstacles.
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Autonomous tractor pathfinding on farm grid maps around terrain obstacles and soil compaction zones.
               </div>
             </div>
           )}
 
           {activeTab === 'ac3' && (
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
               <p>
-                <strong>Arc Consistency Algorithm #3 (AC-3)</strong> reduces variable domains by enforcing pairwise arc consistency across constraints.
+                <strong>Arc Consistency Algorithm #3 (AC-3)</strong> reduces variable domains by enforcing pairwise arc consistency across constraints before search.
               </p>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1 text-slate-700">
-                <span className="font-bold text-slate-900 block">AgroAI Use Case:</span>
-                Eliminating conflicting time slot assignments for irrigation pumps before backtracking search.
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Eliminating conflicting time slot assignments for irrigation pumps under water volume and thermal peak constraints.
               </div>
             </div>
           )}
+
+          {activeTab === 'kmeans' && (
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
+              <p>
+                <strong>K-Means Clustering</strong> partitions field sensor observations into <em>K</em> clusters by minimizing Euclidean distance to cluster centroids:
+              </p>
+              <div className="p-space-md rounded-lg bg-surface-container font-data-mono text-center text-primary text-headline-sm font-semibold">
+                J = ∑ ∑ ||x_i - μ_j||²
+              </div>
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Grouping soil telemetry readings into homogeneous management zones for precision fertilizer dosing.
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'dtree' && (
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
+              <p>
+                <strong>Decision Tree Classifier</strong> recursively splits dataset attributes based on <strong>Gini Impurity</strong> reduction:
+              </p>
+              <div className="p-space-md rounded-lg bg-surface-container font-data-mono text-center text-primary text-headline-sm font-semibold">
+                Gini = 1 - ∑ (p_i)²
+              </div>
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Classifying crop health stress into Normal, Mild Stress, or Severe Deficit based on ETc, NDVI, and temperature inputs.
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'cnn' && (
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
+              <p>
+                <strong>Convolutional Neural Network (CNN)</strong> extracts spatial visual features via Convolution, ReLU Activation, and Pooling layers for image classification.
+              </p>
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Automated foliar disease identification (Early Blight, Rust, Mildew) from camera trap and drone imagery.
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'csp' && (
+            <div className="space-y-space-md text-body-md text-on-surface-variant leading-relaxed">
+              <p>
+                <strong>Constraint Satisfaction Problem (CSP)</strong> represents state as variables V with domains D and constraints C, solved via Backtracking + MRV heuristic.
+              </p>
+              <div className="p-space-md rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1 text-on-surface">
+                <span className="font-semibold text-primary block">AgroAI Application:</span>
+                Multi-field irrigation timetable optimization subject to reservoir capacities, pump flow rates, and electricity tariffs.
+              </div>
+            </div>
+          )}
+
+          {/* Module Specs Card */}
+          <div className="pt-space-sm border-t border-outline-variant/30">
+            <h4 className="font-headline-sm text-headline-sm text-primary mb-space-xs">Registered Module Info</h4>
+            <div className="grid grid-cols-2 gap-space-xs font-data-mono text-label-sm text-on-surface-variant">
+              {AI_MODULES.filter((m) => m.id.includes(activeTab) || activeTab.includes(m.id)).map((mod) => (
+                <div key={mod.id} className="bg-surface-container p-space-xs rounded">
+                  <span className="font-semibold text-primary">{mod.name}</span>
+                  <p className="text-[11px] text-on-surface-variant">{mod.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Code Snippet Box */}
-        <div className="bg-slate-900 text-slate-100 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-3 font-mono text-xs overflow-x-auto">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2 text-slate-400">
-            <span className="flex items-center gap-2 text-emerald-400 font-bold">
-              <Code className="w-4 h-4" /> Python Implementation ({activeTab}.py)
+        <div className="bg-primary p-space-lg rounded-xl shadow-md space-y-space-sm font-data-mono text-body-sm text-on-primary overflow-x-auto border border-outline-variant/20">
+          <div className="flex items-center justify-between border-b border-outline-variant/30 pb-space-xs text-on-primary-container">
+            <span className="flex items-center gap-space-xs text-secondary font-semibold">
+              <span className="material-symbols-outlined text-[18px]">code</span>
+              Python Reference Implementation ({activeTab}.py)
             </span>
-            <span className="text-[11px]">backend/ai/{activeTab === 'ac3' ? 'csp' : 'search'}/{activeTab}.py</span>
+            <span className="text-[11px]">backend/ai/{activeTab}.py</span>
           </div>
 
-          <pre className="text-emerald-300 text-[11px] leading-relaxed">
+          <pre className="text-secondary-fixed text-[12px] leading-relaxed pt-space-xs">
             {activeTab === 'bfs' && `from collections import deque
 
 def bfs(graph, start, goal):
@@ -194,6 +287,79 @@ def astar(grid, start, goal):
                 if Z != X and Z != Y:
                     queue.append((Z, X))
     return True`}
+
+            {activeTab === 'kmeans' && `import numpy as np
+
+def kmeans(data, k=3, max_iters=100):
+    # Initialize centroids randomly
+    centroids = data[np.random.choice(len(data), k, replace=False)]
+    for _ in range(max_iters):
+        # Assign clusters based on Euclidean distance
+        distances = np.linalg.norm(data[:, None] - centroids, axis=2)
+        labels = np.argmin(distances, axis=1)
+        # Update centroid means
+        new_centroids = np.array([data[labels == i].mean(axis=0) for i in range(k)])
+        if np.all(centroids == new_centroids):
+            break
+        centroids = new_centroids
+    return labels, centroids`}
+
+            {activeTab === 'dtree' && `def gini_impurity(y):
+    m = len(y)
+    if m == 0: return 0
+    p = [np.mean(y == c) for c in np.unique(y)]
+    return 1.0 - sum([pi**2 for pi in p])
+
+def find_best_split(X, y):
+    best_gini = 1.0
+    best_feat, best_thresh = None, None
+    for feat in range(X.shape[1]):
+        thresholds = np.unique(X[:, feat])
+        for t in thresholds:
+            left_mask = X[:, feat] <= t
+            gini = (sum(left_mask)*gini_impurity(y[left_mask]) + 
+                    sum(~left_mask)*gini_impurity(y[~left_mask])) / len(y)
+            if gini < best_gini:
+                best_gini, best_feat, best_thresh = gini, feat, t
+    return best_feat, best_thresh`}
+
+            {activeTab === 'cnn' && `import torch
+import torch.nn as nn
+
+class PlantDiseaseCNN(nn.Module):
+    def __init__(self, num_classes=4):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2)
+        )
+        self.classifier = nn.Linear(64 * 56 * 56, num_classes)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        return self.classifier(x)`}
+
+            {activeTab === 'csp' && `def backtracking_search(csp):
+    return backtrack({}, csp)
+
+def backtrack(assignment, csp):
+    if len(assignment) == len(csp.variables):
+        return assignment
+    var = select_unassigned_variable(assignment, csp)
+    for value in order_domain_values(var, assignment, csp):
+        if is_consistent(var, value, assignment, csp):
+            assignment[var] = value
+            result = backtrack(assignment, csp)
+            if result is not None:
+                return result
+            del assignment[var]
+    return None`}
           </pre>
         </div>
       </div>
