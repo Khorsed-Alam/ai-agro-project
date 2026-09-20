@@ -1,82 +1,165 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import {
-  LayoutDashboard,
-  Map,
-  Sprout,
-  Cpu,
-  Droplets,
-  Scan,
-  GitBranch,
-  History as HistoryIcon,
-  Settings as SettingsIcon,
-  Leaf
-} from 'lucide-react';
+import type { HealthResponse } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 interface NavItem {
   name: string;
   path: string;
-  icon: React.ElementType;
+  icon: string;
 }
 
-const navItems: NavItem[] = [
-  { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { name: 'Farm', path: '/farm', icon: Map },
-  { name: 'Fields', path: '/fields', icon: Sprout },
-  { name: 'AI Analysis', path: '/ai-analysis', icon: Cpu },
-  { name: 'Irrigation', path: '/irrigation', icon: Droplets },
-  { name: 'Disease Detection', path: '/disease-detection', icon: Scan },
-  { name: 'Algorithms', path: '/algorithms', icon: GitBranch },
-  { name: 'History', path: '/history', icon: HistoryIcon },
-  { name: 'Settings', path: '/settings', icon: SettingsIcon },
-];
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
 
-export const Navigation: React.FC = () => {
+interface NavigationProps {
+  health: HealthResponse | null;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export const Navigation: React.FC<NavigationProps> = ({ health, mobileOpen = false, onMobileClose }) => {
+  const { userRole } = useAuth();
+  const isHealthy = health?.status === 'ok';
+
+  const navSections: NavSection[] = [
+    {
+      label: 'Main',
+      items: [
+        { name: 'Dashboard', path: '/dashboard', icon: 'home' },
+        { name: 'My Farm', path: '/my-farm', icon: 'location_on' },
+        { name: 'Fields', path: '/fields', icon: 'layers' },
+        { name: 'Weather', path: '/weather', icon: 'wb_sunny' },
+      ]
+    },
+    {
+      label: 'AI & Analysis',
+      items: [
+        { name: 'AI Analysis', path: '/ai-analysis', icon: 'memory' },
+        { name: 'Disease Detection', path: '/disease-detection', icon: 'filter_center_focus' },
+        { name: 'Irrigation Planner', path: '/irrigation-planner', icon: 'water_drop' },
+        { name: 'Algorithms & Theory', path: '/algorithms', icon: 'menu_book' },
+      ]
+    },
+    {
+      label: userRole === 'farmer' ? 'Workspaces & Tools' : 'Workspaces & Management',
+      items: [
+        userRole === 'farmer'
+          ? { name: 'Farmer Workspace', path: '/farmer-dashboard', icon: 'assignment_turned_in' }
+          : { name: 'Owner GIS Workspace', path: '/owner-dashboard', icon: 'admin_panel_settings' },
+        { name: 'Resources & Sensors', path: '/resources', icon: 'dns' },
+        { name: 'History & Logs', path: '/history', icon: 'schedule' },
+        { name: 'Settings', path: '/settings', icon: 'tune' },
+      ]
+    }
+  ];
+
   return (
-    <aside className="w-64 bg-slate-900 text-white min-h-screen flex flex-col shadow-xl">
-      {/* Brand Header */}
-      <div className="p-5 border-b border-slate-800 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-          <Leaf className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
-            Agro<span className="text-emerald-400">AI</span>
-          </h1>
-          <p className="text-xs text-emerald-300 font-medium">Decision Support System</p>
-        </div>
-      </div>
+    <>
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
 
-      {/* Navigation Links */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                isActive
-                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-semibold'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-emerald-300'
-              }`
-            }
-          >
-            <item.icon className="w-4 h-4 shrink-0" />
-            <span>{item.name}</span>
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* Footer Info */}
-      <div className="p-4 border-t border-slate-800 bg-slate-950/50">
-        <div className="px-3 py-2 rounded-lg bg-emerald-950/40 border border-emerald-800/40 text-xs">
-          <div className="flex items-center justify-between text-emerald-400 font-semibold">
-            <span>Week 1</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      {/* Sidebar */}
+      <aside
+        className={`fixed left-0 top-0 h-screen bg-surface border-r z-50 flex flex-col justify-between overflow-y-auto transition-transform duration-200
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+        style={{ width: '240px', borderColor: 'rgba(193,200,194,0.4)' }}
+      >
+        <div className="flex flex-col">
+          {/* Logo Header */}
+          <div className="h-16 px-space-md flex items-center gap-space-sm" style={{ borderBottom: '1px solid rgba(193,200,194,0.3)' }}>
+            {/* AgroAI Logo Icon */}
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-container">
+              <span className="material-symbols-outlined text-on-primary-container" style={{ fontSize: '18px' }}>
+                eco
+              </span>
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-headline-sm text-primary leading-tight truncate">AgroAI</span>
+              <span className="font-label-sm text-on-surface-variant truncate">Decision Support</span>
+            </div>
           </div>
-          <p className="text-slate-400 text-[11px] mt-0.5">Foundation & Core Setup</p>
+
+          {/* Nav Sections */}
+          <div className="p-space-sm space-y-space-md">
+            {navSections.map((section) => (
+              <div key={section.label} className="space-y-space-xs">
+                <div className="px-space-sm py-space-xs font-label-sm text-on-surface-variant uppercase tracking-wider">
+                  {section.label}
+                </div>
+                <nav className="flex flex-col space-y-space-xs">
+                  {section.items.map((item) => (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={onMobileClose}
+                      className={({ isActive }) =>
+                        `flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg transition-colors font-body-md ${
+                          isActive
+                            ? 'bg-primary-container text-on-primary font-semibold'
+                            : 'text-on-surface-variant hover:text-on-surface'
+                        }`
+                      }
+                      style={({ isActive }) =>
+                        isActive
+                          ? {}
+                          : { ['--tw-bg-opacity' as any]: 1 }
+                      }
+                      onMouseEnter={(e) => {
+                        const el = e.currentTarget;
+                        if (!el.classList.contains('bg-primary-container')) {
+                          el.style.backgroundColor = '#dee9fc';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        const el = e.currentTarget;
+                        if (!el.classList.contains('bg-primary-container')) {
+                          el.style.backgroundColor = '';
+                        }
+                      }}
+                    >
+                      <span className="material-symbols-outlined shrink-0" style={{ fontSize: '18px' }}>
+                        {item.icon}
+                      </span>
+                      <span>{item.name}</span>
+                    </NavLink>
+                  ))}
+                </nav>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    </aside>
+
+        {/* Footer Status */}
+        <div className="p-space-sm bg-surface space-y-2" style={{ borderTop: '1px solid rgba(193,200,194,0.3)' }}>
+          <div className="flex items-center justify-between px-space-xs py-1 rounded-md bg-surface-container text-xs">
+            <span className="font-label-sm text-on-surface-variant">Active Role:</span>
+            <span className="px-2 py-0.5 rounded font-bold uppercase text-[10px] bg-primary-container text-on-primary">
+              {userRole === 'farmer' ? 'Farmer' : 'Owner'}
+            </span>
+          </div>
+
+          <div
+            className="flex items-center gap-space-xs px-space-xs py-space-xs rounded-lg bg-surface-container-lowest"
+            style={{ border: '1px solid rgba(193,200,194,0.4)' }}
+          >
+            <span
+              className={`w-2 h-2 rounded-full shrink-0 ${isHealthy ? 'bg-secondary' : 'bg-amber-500'}`}
+            />
+            <span className="font-label-sm text-on-surface-variant truncate">
+              {isHealthy ? 'FastAPI + Firebase (Healthy)' : 'FastAPI (Connecting...)'}
+            </span>
+          </div>
+        </div>
+      </aside>
+    </>
   );
 };
