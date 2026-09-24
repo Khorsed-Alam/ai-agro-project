@@ -5,6 +5,7 @@ import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import type { Field } from '../types';
 import { ECOSYSTEM_UPDATED_EVENT, getFarms } from '../services/ecosystem';
+import { evaluateFieldDecision } from '../utils/decisionEngine';
 
 export const Dashboard: React.FC = () => {
   const { userProfile } = useAuth();
@@ -40,10 +41,15 @@ export const Dashboard: React.FC = () => {
     return () => window.removeEventListener(ECOSYSTEM_UPDATED_EVENT, loadData);
   }, []);
 
+  const evaluatedFields = fields.map((f) => ({
+    field: f,
+    decision: evaluateFieldDecision(f),
+  }));
+
   const totalFields = fields.length;
-  const healthyFields = fields.filter((f) => f.status === 'Healthy').length;
-  const dryFields = fields.filter((f) => f.status === 'Dry' || f.status === 'Moderate').length;
-  const criticalFields = fields.filter((f) => f.status === 'Critical').length;
+  const healthyFields = evaluatedFields.filter((ef) => ef.decision.status === 'Healthy').length;
+  const dryFields = evaluatedFields.filter((ef) => ef.decision.status === 'Attention').length;
+  const criticalFields = evaluatedFields.filter((ef) => ef.decision.status === 'Critical').length;
   const waterAvailability = 64200; // Reservoir capacity liters
 
   return (
@@ -336,16 +342,20 @@ export const Dashboard: React.FC = () => {
                     ) : fields.length === 0 ? (
                       <tr><td colSpan={7} className="py-8 text-center text-on-surface-variant font-body-sm">No fields found. Create a field to get started.</td></tr>
                     ) : null}
-                    {!isLoading && fields.map((field) => {
-                      const isCritical = field.status === 'Critical';
-                      const isWarning = field.status === 'Dry' || field.status === 'Moderate';
-                      const moistureColor = isCritical ? '#ba1a1a' : isWarning ? '#b45309' : '#296b3c';
+                    {!isLoading && evaluatedFields.map(({ field, decision }) => {
+                      const isCritical = decision.status === 'Critical';
+                      const isAttention = decision.status === 'Attention';
+                      const isHealthy = decision.status === 'Healthy';
+                      const moistureColor = isCritical ? '#ba1a1a' : isAttention ? '#b45309' : '#296b3c';
+                      const displayMoisture = decision.soilMoistureVal !== null ? `${decision.soilMoistureVal}%` : 'N/A';
+                      const displayPH = decision.soilPHVal !== null ? `${decision.soilPHVal} pH` : 'N/A';
+
                       return (
                         <tr
-                          key={field.id}
+                          key={field.id || field.fieldId || field.docId || field.name}
                           className="transition-colors"
                           style={{
-                            backgroundColor: isCritical ? 'rgba(255,218,214,0.15)' : isWarning ? 'rgba(254,243,199,0.15)' : 'transparent'
+                            backgroundColor: isCritical ? 'rgba(255,218,214,0.15)' : isAttention ? 'rgba(254,243,199,0.15)' : 'transparent'
                           }}
                         >
                           <td className="py-3 px-space-md font-data-mono font-semibold" style={{ color: isCritical ? '#ba1a1a' : '#121c2a' }}>
@@ -355,58 +365,69 @@ export const Dashboard: React.FC = () => {
                           <td className="py-3 px-space-md">
                             <div className="flex items-center gap-2">
                               <div className="w-20 bg-surface-container-high rounded-full overflow-hidden" style={{ height: '6px' }}>
-                                <div className="h-full rounded-full" style={{ width: `${field.soilMoisture ?? 0}%`, backgroundColor: moistureColor }} />
+                                <div className="h-full rounded-full" style={{ width: `${decision.soilMoistureVal ?? 0}%`, backgroundColor: moistureColor }} />
                               </div>
                               <span className="font-data-mono text-label-sm" style={{ color: moistureColor }}>
-                                {field.soilMoisture !== undefined && field.soilMoisture !== null ? `${field.soilMoisture}%` : 'N/A'}
+                                {displayMoisture}
                               </span>
                             </div>
                           </td>
                           <td className="py-3 px-space-md font-data-mono">
-                            {field.soilPH !== undefined && field.soilPH !== null ? `${field.soilPH} pH` : 'N/A'}
+                            {displayPH}
                           </td>
                           <td className="py-3 px-space-md">
                             {isCritical ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-error font-label-sm font-semibold"
-                                style={{ backgroundColor: 'rgba(255,218,214,0.8)' }}>
+                                style={{ backgroundColor: 'rgba(255,218,214,0.8)' }}
+                                title={decision.reasons.join('\n')}>
                                 Critical
                               </span>
-                            ) : isWarning ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-amber-800 bg-amber-100 font-label-sm font-semibold">
+                            ) : isAttention ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-amber-800 bg-amber-100 font-label-sm font-semibold"
+                                title={decision.reasons.join('\n')}>
                                 Attention
                               </span>
-                            ) : (
+                            ) : isHealthy ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-on-secondary-container font-label-sm font-semibold"
-                                style={{ backgroundColor: 'rgba(173,243,184,0.4)' }}>
+                                style={{ backgroundColor: 'rgba(173,243,184,0.4)' }}
+                                title={decision.reasons.join('\n')}>
                                 Healthy
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-on-surface-variant bg-surface-container font-label-sm font-semibold"
+                                title={decision.reasons.join('\n')}>
+                                {decision.status}
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-space-md text-on-surface-variant">
-                            {field.waterRequirement || (field as any).waterNeed || (field as any).waterPriority || (field.status === 'Critical' ? 'Urgent' : field.status === 'Dry' || field.status === 'Moderate' ? 'High' : 'Low')}
+                          <td className="py-3 px-space-md text-on-surface font-medium">
+                            {decision.waterNeed}
                           </td>
                           <td className="py-3 px-space-md text-right">
-                            {isCritical ? (
+                            {decision.action === 'Pathogen AI' ? (
                               <button
-                                className="px-2 py-0.5 rounded bg-error text-on-error font-label-sm font-semibold hover:opacity-90"
+                                className="px-2 py-0.5 rounded bg-error text-on-error font-label-sm font-semibold hover:opacity-90 cursor-pointer"
                                 type="button"
-                                onClick={() => window.location.href = '/disease-detection'}
+                                title={decision.reasons.join('\n')}
+                                onClick={() => window.location.href = decision.actionRoute}
                               >
                                 Pathogen AI
                               </button>
-                            ) : isWarning ? (
+                            ) : decision.action === 'Queue Run' ? (
                               <button
-                                className="text-amber-800 hover:text-amber-900 font-label-sm font-semibold"
+                                className="text-amber-800 hover:text-amber-900 font-label-sm font-semibold cursor-pointer"
                                 type="button"
-                                onClick={() => window.location.href = '/irrigation-planner'}
+                                title={decision.reasons.join('\n')}
+                                onClick={() => window.location.href = decision.actionRoute}
                               >
                                 Queue Run
                               </button>
                             ) : (
                               <button
-                                className="text-secondary hover:text-primary font-label-sm font-semibold"
+                                className="text-secondary hover:text-primary font-label-sm font-semibold cursor-pointer"
                                 type="button"
-                                onClick={() => window.location.href = '/fields'}
+                                title={decision.reasons.join('\n')}
+                                onClick={() => window.location.href = decision.actionRoute}
                               >
                                 Inspect
                               </button>

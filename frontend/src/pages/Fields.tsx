@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { Field } from '../types';
 import { apiService } from '../services/api';
 import { ECOSYSTEM_UPDATED_EVENT } from '../services/ecosystem';
+import { evaluateFieldDecision } from '../utils/decisionEngine';
 
 type FilterStatus = 'all' | 'Healthy' | 'Moderate' | 'Dry' | 'Critical';
 
@@ -42,38 +43,36 @@ export const Fields: React.FC = () => {
 
   const selectedField = fields.find((f) => (f.fieldId || f.id || (f as any).docId) === selectedFieldId) || null;
 
-  const filteredFields = fields.filter((f) => {
-    const matchesStatus = filterStatus === 'all' || f.status === filterStatus;
-    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      f.crop.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
-
   const getMetrics = (f: any) => {
-    const moisture = f.soilMoisture !== undefined && f.soilMoisture !== null ? f.soilMoisture : f.moisture;
-    const ph = f.soilPH !== undefined && f.soilPH !== null ? f.soilPH : (f.ph !== undefined && f.ph !== null ? f.ph : f.soilPh);
-    const temp = f.temperature !== undefined && f.temperature !== null ? f.temperature : f.temp;
-    const rain = f.rainfall !== undefined && f.rainfall !== null ? f.rainfall : f.rain;
-    const humidity = f.humidity;
-    const status = f.status || 'Healthy';
-    const waterReq = f.waterRequirement || f.waterNeed || f.waterPriority || (status === 'Critical' ? 'Urgent' : (status === 'Dry' || status === 'Moderate') ? 'High' : 'Low');
+    const decision = evaluateFieldDecision(f);
 
     return {
-      moistureVal: moisture !== undefined && moisture !== null && !isNaN(Number(moisture)) ? Number(moisture) : null,
-      moistureDisplay: moisture !== undefined && moisture !== null && !isNaN(Number(moisture)) ? `${moisture}%` : 'Not available',
-      phDisplay: ph !== undefined && ph !== null && !isNaN(Number(ph)) ? `${ph} pH` : 'Not available',
-      tempDisplay: temp !== undefined && temp !== null && !isNaN(Number(temp)) ? `${temp}°C` : 'Not available',
-      rainDisplay: rain !== undefined && rain !== null && !isNaN(Number(rain)) ? `${rain} mm` : 'Not available',
-      humidityDisplay: humidity !== undefined && humidity !== null && !isNaN(Number(humidity)) ? `${humidity}%` : 'Not available',
-      waterRequirement: waterReq,
+      moistureVal: decision.soilMoistureVal,
+      moistureDisplay: decision.soilMoistureVal !== null ? `${decision.soilMoistureVal}%` : 'Not available',
+      phDisplay: decision.soilPHVal !== null ? `${decision.soilPHVal} pH` : 'Not available',
+      tempDisplay: decision.temperatureVal !== null ? `${decision.temperatureVal}°C` : 'Not available',
+      rainDisplay: decision.rainfallVal !== null ? `${decision.rainfallVal} mm` : 'Not available',
+      humidityDisplay: decision.humidityVal !== null ? `${decision.humidityVal}%` : 'Not available',
+      waterRequirement: decision.waterNeed,
+      action: decision.action,
+      actionRoute: decision.actionRoute,
+      reasons: decision.reasons,
       areaDisplay: f.areaAcres !== undefined && f.areaAcres !== null ? `${f.areaAcres} Acres` : (f.area ? `${f.area}` : 'Not available'),
       soilType: f.soilType || 'Not available',
-      status: status,
+      status: decision.status,
       latDisplay: f.latitude !== undefined && f.latitude !== null ? `${f.latitude}` : 'Not available',
       lngDisplay: f.longitude !== undefined && f.longitude !== null ? `${f.longitude}` : 'Not available',
       farmerName: f.assignedFarmerName || f.farmerName || (f.assignedFarmerId ? 'Assigned' : 'Unassigned'),
     };
   };
+
+  const filteredFields = fields.filter((f) => {
+    const m = getMetrics(f);
+    const matchesStatus = filterStatus === 'all' || m.status === filterStatus || (filterStatus === 'Moderate' && m.status === 'Attention') || (filterStatus === 'Dry' && m.status === 'Attention');
+    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (f.crop && f.crop.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesStatus && matchesSearch;
+  });
 
   const statusFilters: FilterStatus[] = ['all', 'Healthy', 'Moderate', 'Dry', 'Critical'];
 
@@ -170,7 +169,8 @@ export const Fields: React.FC = () => {
               {filteredFields.map((field) => {
                 const m = getMetrics(field);
                 const isCritical = m.status === 'Critical';
-                const isWarning = m.status === 'Dry' || m.status === 'Moderate';
+                const isAttention = m.status === 'Attention';
+                const isInsufficient = m.status === 'Insufficient Data';
                 const fieldUniqueId = field.fieldId || field.id || (field as any).docId;
                 const isSelected = selectedFieldId === fieldUniqueId;
 
@@ -200,9 +200,13 @@ export const Fields: React.FC = () => {
                           <span className="w-1.5 h-1.5 rounded-full bg-error inline-block animate-pulse" />
                           Critical
                         </span>
-                      ) : isWarning ? (
+                      ) : isAttention ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-amber-800 bg-amber-100 font-label-sm font-semibold">
                           Attention
+                        </span>
+                      ) : isInsufficient ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-on-surface-variant bg-surface-container font-label-sm font-semibold">
+                          No Data
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-on-secondary-container font-label-sm font-semibold"
@@ -233,8 +237,16 @@ export const Fields: React.FC = () => {
 
                     {/* Footer */}
                     <div className="px-space-md pb-space-md flex items-center justify-between">
-                      <span className="font-label-sm text-on-surface-variant">Water Priority:</span>
-                      <span className="font-label-sm font-semibold text-on-surface">
+                      <span className="font-label-sm text-on-surface-variant">Water Need:</span>
+                      <span className={`font-label-sm font-semibold ${
+                        m.waterRequirement === 'Urgent' || m.waterRequirement === 'High'
+                          ? 'text-error'
+                          : m.waterRequirement === 'Moderate'
+                          ? 'text-amber-700'
+                          : m.waterRequirement === 'Low'
+                          ? 'text-secondary'
+                          : 'text-on-surface-variant'
+                      }`}>
                         {m.waterRequirement}
                       </span>
                     </div>
@@ -274,7 +286,7 @@ export const Fields: React.FC = () => {
                           <div className="h-full rounded-full transition-all" style={{
                             width: `${sm.moistureVal ?? 0}%`,
                             backgroundColor: sm.status === 'Critical' ? '#ba1a1a' :
-                              sm.status === 'Dry' || sm.status === 'Moderate' ? '#b45309' : '#296b3c'
+                              sm.status === 'Attention' ? '#b45309' : '#296b3c'
                           }} />
                         </div>
                       </div>
@@ -289,9 +301,8 @@ export const Fields: React.FC = () => {
                           { label: 'Temperature', value: sm.tempDisplay },
                           { label: 'Humidity', value: sm.humidityDisplay },
                           { label: 'Rainfall', value: sm.rainDisplay },
-                          { label: 'Water Priority', value: sm.waterRequirement },
-                          { label: 'Latitude', value: sm.latDisplay },
-                          { label: 'Longitude', value: sm.lngDisplay },
+                          { label: 'Water Need', value: sm.waterRequirement },
+                          { label: 'Recommended Action', value: sm.action },
                           { label: 'Assigned Farmer', value: sm.farmerName },
                         ].map(({ label, value }) => (
                           <div key={label} className="flex justify-between py-1.5" style={{ borderBottom: '1px solid rgba(193,200,194,0.2)' }}>
@@ -301,21 +312,38 @@ export const Fields: React.FC = () => {
                         ))}
                       </div>
 
+                      {/* AI Decision Reasons Box */}
+                      {sm.reasons && sm.reasons.length > 0 && (
+                        <div className="p-space-sm rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1">
+                          <div className="font-label-sm font-semibold text-secondary flex items-center gap-1">
+                            <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>psychology</span>
+                            Decision Reasons
+                          </div>
+                          <ul className="list-disc list-inside text-xs text-on-surface-variant space-y-1">
+                            {sm.reasons.map((r, idx) => (
+                              <li key={idx} className="leading-snug">{r}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       <div className="flex flex-col gap-space-sm pt-space-sm">
                         <button
                           className="w-full h-9 bg-primary-container text-on-primary rounded-lg font-label-md font-semibold hover:opacity-90 flex items-center justify-center gap-space-xs cursor-pointer"
-                          onClick={() => window.location.href = '/irrigation-planner'}
+                          onClick={() => window.location.href = sm.actionRoute || '/irrigation-planner'}
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>water_drop</span>
-                          Plan Irrigation
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+                            {sm.action === 'Pathogen AI' ? 'filter_center_focus' : 'water_drop'}
+                          </span>
+                          Execute {sm.action}
                         </button>
                         <button
                           className="w-full h-9 bg-surface-container-lowest text-on-surface rounded-lg font-label-md font-semibold flex items-center justify-center gap-space-xs cursor-pointer"
                           style={{ border: '1px solid rgba(193,200,194,0.4)' }}
                           onClick={() => window.location.href = '/disease-detection'}
                         >
-                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>filter_center_focus</span>
-                          Analyze Image
+                          <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>analytics</span>
+                          Analyze Leaf Image
                         </button>
                       </div>
                     </div>

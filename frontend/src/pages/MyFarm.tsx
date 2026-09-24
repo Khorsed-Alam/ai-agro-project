@@ -3,6 +3,7 @@ import type { Field } from '../types';
 import { apiService } from '../services/api';
 import { firestoreService } from '../services/firebase';
 import { ECOSYSTEM_UPDATED_EVENT, getFarms, notifyEcosystemChange } from '../services/ecosystem';
+import { evaluateFieldDecision } from '../utils/decisionEngine';
 
 export const MyFarm: React.FC = () => {
   const [fields, setFields] = useState<Field[]>([]);
@@ -179,47 +180,54 @@ export const MyFarm: React.FC = () => {
                         </td>
                       </tr>
                     ) : (
-                      fields.map((f) => (
-                        <tr
-                          key={f.id}
-                          onClick={() => setSelectedField(f)}
-                          className={`hover:bg-surface-container-low transition-colors cursor-pointer ${
-                            selectedField?.id === f.id ? 'bg-surface-container-low font-semibold' : ''
-                          }`}
-                        >
-                          <td className="py-space-sm px-space-md font-data-mono font-medium text-primary">
-                            {f.name}
-                          </td>
-                          <td className="py-space-sm px-space-md">{f.crop}</td>
-                          <td className="py-space-sm px-space-md font-data-mono">
-                            {f.soilMoisture !== undefined && f.soilMoisture !== null ? `${f.soilMoisture}% VWC` : 'N/A'}
-                          </td>
-                          <td className="py-space-sm px-space-md">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded font-label-sm font-semibold ${
-                                f.status === 'Healthy'
-                                  ? 'bg-secondary-fixed text-on-secondary-fixed-variant'
-                                  : f.status === 'Critical'
-                                  ? 'bg-error-container text-on-error-container'
-                                  : 'bg-surface-container text-on-surface'
-                              }`}
-                            >
-                              {f.status}
-                            </span>
-                          </td>
-                          <td className="py-space-sm px-space-md text-right">
-                            <button
-                              className="px-space-xs py-1 text-secondary font-label-md hover:underline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedField(f);
-                              }}
-                            >
-                              Inspect
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      fields.map((f) => {
+                        const fdec = evaluateFieldDecision(f);
+                        const isCrit = fdec.status === 'Critical';
+                        const isAtt = fdec.status === 'Attention';
+                        return (
+                          <tr
+                            key={f.id || f.fieldId || (f as any).docId || f.name}
+                            onClick={() => setSelectedField(f)}
+                            className={`hover:bg-surface-container-low transition-colors cursor-pointer ${
+                              selectedField?.id === f.id ? 'bg-surface-container-low font-semibold' : ''
+                            }`}
+                          >
+                            <td className="py-space-sm px-space-md font-data-mono font-medium text-primary">
+                              {f.name}
+                            </td>
+                            <td className="py-space-sm px-space-md">{f.crop}</td>
+                            <td className="py-space-sm px-space-md font-data-mono">
+                              {fdec.soilMoistureVal !== null ? `${fdec.soilMoistureVal}% VWC` : 'N/A'}
+                            </td>
+                            <td className="py-space-sm px-space-md">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded font-label-sm font-semibold ${
+                                  isCrit
+                                    ? 'bg-error-container text-on-error-container'
+                                    : isAtt
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : fdec.status === 'Insufficient Data'
+                                    ? 'bg-surface-container text-on-surface-variant'
+                                    : 'bg-secondary-fixed text-on-secondary-fixed-variant'
+                                }`}
+                              >
+                                {fdec.status}
+                              </span>
+                            </td>
+                            <td className="py-space-sm px-space-md text-right">
+                              <button
+                                className="px-space-xs py-1 text-secondary font-label-md hover:underline cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedField(f);
+                                }}
+                              >
+                                Inspect
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -236,14 +244,14 @@ export const MyFarm: React.FC = () => {
               </div>
 
               {selectedField ? (() => {
-                const sm = selectedField.soilMoisture !== undefined && selectedField.soilMoisture !== null ? selectedField.soilMoisture : (selectedField as any).moisture;
-                const sph = selectedField.soilPH !== undefined && selectedField.soilPH !== null ? selectedField.soilPH : ((selectedField as any).ph !== undefined && (selectedField as any).ph !== null ? (selectedField as any).ph : (selectedField as any).soilPh);
-                const stemp = selectedField.temperature !== undefined && selectedField.temperature !== null ? selectedField.temperature : (selectedField as any).temp;
-                const shum = selectedField.humidity;
-                const waterReq = selectedField.waterRequirement || (selectedField as any).waterNeed || (selectedField as any).waterPriority || (selectedField.status === 'Critical' ? 'Urgent' : selectedField.status === 'Dry' || selectedField.status === 'Moderate' ? 'High' : 'Low');
-                const area = selectedField.areaAcres !== undefined && selectedField.areaAcres !== null ? `${selectedField.areaAcres} Acres` : ((selectedField as any).area ? `${(selectedField as any).area}` : 'Not available');
+                const dec = evaluateFieldDecision(selectedField);
+                const area = selectedField.areaAcres !== undefined && selectedField.areaAcres !== null
+                  ? `${selectedField.areaAcres} Acres`
+                  : ((selectedField as any).area ? `${(selectedField as any).area}` : 'Not available');
                 const soilType = selectedField.soilType || 'Not available';
                 const farmerName = selectedField.assignedFarmerName || (selectedField as any).farmerName || (selectedField.assignedFarmerId ? 'Assigned' : 'Unassigned');
+                const isCritical = dec.status === 'Critical';
+                const isAttention = dec.status === 'Attention';
 
                 return (
                   <div className="space-y-space-md text-body-sm text-on-surface">
@@ -252,10 +260,27 @@ export const MyFarm: React.FC = () => {
                       <span className="font-headline-sm text-primary font-semibold">{selectedField.name} ({selectedField.crop})</span>
                     </div>
 
+                    {/* Status badge */}
+                    <div className={`p-space-sm rounded-lg flex items-center gap-2 ${
+                      isCritical ? 'bg-error-container/40' : isAttention ? 'bg-amber-50' : 'bg-secondary-fixed/30'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${
+                        isCritical ? 'bg-error animate-pulse' : isAttention ? 'bg-amber-500' : 'bg-secondary'
+                      }`} />
+                      <span className={`font-label-sm font-semibold ${
+                        isCritical ? 'text-error' : isAttention ? 'text-amber-800' : 'text-secondary'
+                      }`}>
+                        Status: {dec.status}
+                      </span>
+                      <span className="ml-auto font-label-sm text-on-surface-variant">
+                        Water: <strong>{dec.waterNeed}</strong>
+                      </span>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-space-xs text-xs bg-surface p-2.5 rounded border border-outline-variant/20">
-                      <div>Status: <strong className="text-primary">{selectedField.status || 'Healthy'}</strong></div>
                       <div>Area: <strong>{area}</strong></div>
                       <div>Soil: <strong>{soilType}</strong></div>
+                      <div>Action: <strong>{dec.action}</strong></div>
                       <div>Worker: <strong>{farmerName}</strong></div>
                     </div>
 
@@ -263,35 +288,54 @@ export const MyFarm: React.FC = () => {
                       <div className="bg-surface-container p-space-xs rounded">
                         <span className="text-on-surface-variant text-[11px] block">SOIL MOISTURE</span>
                         <span className="font-semibold text-primary">
-                          {sm !== undefined && sm !== null && !isNaN(Number(sm)) ? `${sm}%` : 'Not available'}
+                          {dec.soilMoistureVal !== null ? `${dec.soilMoistureVal}%` : 'Not available'}
                         </span>
                       </div>
                       <div className="bg-surface-container p-space-xs rounded">
                         <span className="text-on-surface-variant text-[11px] block">SOIL pH</span>
                         <span className="font-semibold text-primary">
-                          {sph !== undefined && sph !== null && !isNaN(Number(sph)) ? `${sph} pH` : 'Not available'}
+                          {dec.soilPHVal !== null ? `${dec.soilPHVal} pH` : 'Not available'}
                         </span>
                       </div>
                       <div className="bg-surface-container p-space-xs rounded">
                         <span className="text-on-surface-variant text-[11px] block">TEMPERATURE</span>
                         <span className="font-semibold text-primary">
-                          {stemp !== undefined && stemp !== null && !isNaN(Number(stemp)) ? `${stemp}°C` : 'Not available'}
+                          {dec.temperatureVal !== null ? `${dec.temperatureVal}°C` : 'Not available'}
                         </span>
                       </div>
                       <div className="bg-surface-container p-space-xs rounded">
                         <span className="text-on-surface-variant text-[11px] block">HUMIDITY</span>
                         <span className="font-semibold text-primary">
-                          {shum !== undefined && shum !== null && !isNaN(Number(shum)) ? `${shum}%` : 'Not available'}
+                          {dec.humidityVal !== null ? `${dec.humidityVal}%` : 'Not available'}
                         </span>
                       </div>
                     </div>
 
-                    <div>
-                      <span className="font-label-sm text-on-surface-variant uppercase block">Water Requirement</span>
-                      <span className="font-label-md font-semibold text-secondary">
-                        {waterReq}
+                    {/* Decision Reasons */}
+                    {dec.reasons && dec.reasons.length > 0 && (
+                      <div className="p-space-sm rounded-lg bg-surface-container-low border border-outline-variant/30 space-y-1">
+                        <div className="font-label-sm font-semibold text-secondary flex items-center gap-1">
+                          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>psychology</span>
+                          AI Decision Reasons
+                        </div>
+                        <ul className="list-disc list-inside text-xs text-on-surface-variant space-y-1">
+                          {dec.reasons.map((r, idx) => (
+                            <li key={idx} className="leading-snug">{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <button
+                      className="w-full h-9 bg-primary-container text-on-primary rounded-lg font-label-md font-semibold hover:opacity-90 flex items-center justify-center gap-space-xs cursor-pointer"
+                      onClick={() => window.location.href = dec.actionRoute}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+                        {dec.action === 'Pathogen AI' ? 'filter_center_focus' : dec.action === 'Queue Run' ? 'water_drop' : 'search'}
                       </span>
-                    </div>
+                      Execute: {dec.action}
+                    </button>
                   </div>
                 );
               })() : (

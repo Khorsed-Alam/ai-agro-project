@@ -22,6 +22,7 @@ import {
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
 } from '../services/ecosystem';
+import { evaluateFieldDecision } from '../utils/decisionEngine';
 
 export const OwnerDashboard: React.FC = () => {
   const { user, userProfile } = useAuth();
@@ -406,10 +407,13 @@ export const OwnerDashboard: React.FC = () => {
                 </div>
               ) : (
                 fields.map((f) => {
+                const fieldDec = evaluateFieldDecision(f);
                 const isSelected = selectedFieldForDetail?.fieldId === f.fieldId;
+                const isCrit = fieldDec.status === 'Critical';
+                const isAtt = fieldDec.status === 'Attention';
                 return (
                   <div
-                    key={f.fieldId}
+                    key={f.fieldId || f.id || (f as any).docId || f.name}
                     onClick={() => {
                       setSelectedFieldForDetail(f);
                       loadFieldTelemetry(f.fieldId);
@@ -425,12 +429,16 @@ export const OwnerDashboard: React.FC = () => {
                         <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">{f.name}</span>
                         <span
                           className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                            f.status === 'Healthy'
-                              ? 'bg-primary-container text-on-primary'
-                              : 'bg-amber-100 text-amber-900'
+                            isCrit
+                              ? 'bg-error-container text-on-error-container'
+                              : isAtt
+                              ? 'bg-amber-100 text-amber-900'
+                              : fieldDec.status === 'Insufficient Data'
+                              ? 'bg-surface-container text-on-surface-variant'
+                              : 'bg-primary-container text-on-primary'
                           }`}
                         >
-                          {f.status}
+                          {fieldDec.status}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-on-surface-variant font-body-sm">
