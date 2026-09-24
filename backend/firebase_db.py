@@ -566,4 +566,344 @@ class AgroDatabaseService:
         except Exception:
             return log_data
 
+    # ─── Farmers ─────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def get_farmers() -> List[Dict[str, Any]]:
+        """Get all users with role='farmer', enriched with assignment status."""
+        farmers = []
+        # Get all users with role=farmer
+        if using_admin_sdk and firestore_client:
+            try:
+                docs = firestore_client.collection("users").where("role", "==", "farmer").stream()
+                for d in docs:
+                    item = d.to_dict()
+                    item["uid"] = d.id
+                    farmers.append(item)
+            except Exception as e:
+                logger.error(f"Firestore Admin get_farmers error: {e}")
+        
+        if not farmers:
+            try:
+                all_users = _rest_get_collection("users")
+                farmers = [u for u in all_users if u.get("role") == "farmer"]
+            except Exception:
+                pass
+
+        # Enrich with assignment status
+        if farmers:
+            try:
+                active_assignments = {}
+                if using_admin_sdk and firestore_client:
+                    try:
+                        assign_docs = firestore_client.collection("assignments").where("status", "==", "active").stream()
+                        for d in assign_docs:
+                            item = d.to_dict()
+                            active_assignments[item.get("farmerId")] = item
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        all_assigns = _rest_get_collection("assignments")
+                        for a in all_assigns:
+                            if a.get("status") == "active":
+                                active_assignments[a.get("farmerId")] = a
+                    except Exception:
+                        pass
+
+                for f in farmers:
+                    uid = f.get("uid") or f.get("id")
+                    if uid in active_assignments:
+                        a = active_assignments[uid]
+                        f["isAssigned"] = True
+                        f["assignedFieldId"] = a.get("fieldId")
+                        f["assignedFieldName"] = a.get("fieldName")
+                        f["assignedFarmName"] = a.get("farmName")
+                    else:
+                        f["isAssigned"] = False
+            except Exception as e:
+                logger.warning(f"Could not enrich farmers with assignment status: {e}")
+
+        return farmers
+
+    # ─── Assignment Requests ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def create_assignment_request(data: Dict[str, Any]) -> Dict[str, Any]:
+        import time
+        request_id = f"areq_{int(time.time() * 1000)}"
+        data["id"] = request_id
+        data["status"] = "pending"
+
+        if using_admin_sdk and firestore_client:
+            try:
+                from google.cloud import firestore as fs
+                data["createdAt"] = fs.SERVER_TIMESTAMP
+                firestore_client.collection("assignment_requests").document(request_id).set(data)
+                return {"success": True, "requestId": request_id}
+            except Exception as e:
+                logger.error(f"Firestore Admin create_assignment_request error: {e}")
+        
+        try:
+            _rest_save_document("assignment_requests", request_id, data)
+            return {"success": True, "requestId": request_id}
+        except Exception as e:
+            logger.error(f"REST create_assignment_request error: {e}")
+            return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def get_assignment_requests(userId: Optional[str] = None, role: Optional[str] = None) -> List[Dict[str, Any]]:
+        requests = []
+        if using_admin_sdk and firestore_client:
+            try:
+                if role == "farmer" and userId:
+                    docs = firestore_client.collection("assignment_requests").where("farmerId", "==", userId).stream()
+                elif role == "owner" and userId:
+                    docs = firestore_client.collection("assignment_requests").where("ownerId", "==", userId).stream()
+                else:
+                    docs = firestore_client.collection("assignment_requests").stream()
+                for d in docs:
+                    item = d.to_dict()
+                    item["id"] = d.id
+                    requests.append(item)
+                return requests
+            except Exception as e:
+                logger.error(f"Firestore Admin get_assignment_requests error: {e}")
+
+        try:
+            all_reqs = _rest_get_collection("assignment_requests")
+            if role == "farmer" and userId:
+                return [r for r in all_reqs if r.get("farmerId") == userId]
+            elif role == "owner" and userId:
+                return [r for r in all_reqs if r.get("ownerId") == userId]
+            return all_reqs
+        except Exception:
+            return []
+
+    @staticmethod
+    def update_assignment_request_status(request_id: str, new_status: str) -> bool:
+        import time
+        update_data = {"status": new_status, "updatedAt": str(time.time())}
+
+        if using_admin_sdk and firestore_client:
+            try:
+                doc_ref = firestore_client.collection("assignment_requests").document(request_id)
+                if not doc_ref.get().exists:
+                    return False
+                doc_ref.update(update_data)
+
+                # If approved: update field and create assignment record
+                if new_status == "approved":
+                    req_data = doc_ref.get().to_dict()
+                    if req_data:
+                        assign_id = f"assign_{int(time.time() * 1000)}"
+                        assign_data = {
+                            "id": assign_id,
+                            "ownerId": req_data.get("ownerId"),
+                            "farmerId": req_data.get("farmerId"),
+                            "farmerName": req_data.get("farmerName"),
+                            "farmId": req_data.get("farmId"),
+                            "farmName": req_data.get("farmName"),
+                            "fieldId": req_data.get("fieldId"),
+                            "fieldName": req_data.get("fieldName"),
+                            "status": "active",
+                            "assignedAt": str(time.time()),
+                        }
+                        firestore_client.collection("assignments").document(assign_id).set(assign_data)
+                        # Update field
+                        field_id = req_data.get("fieldId")
+                        if field_id:
+                            AgroDatabaseService.update_field(field_id, {
+                                "assignedFarmerId": req_data.get("farmerId"),
+                                "assignedFarmerName": req_data.get("farmerName"),
+                                "farmerId": req_data.get("farmerId"),
+                            })
+                return True
+            except Exception as e:
+                logger.error(f"Firestore Admin update_assignment_request_status error: {e}")
+                return False
+        
+        try:
+            _rest_save_document("assignment_requests", request_id, update_data)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def unassign_farmer(farmer_id: str, farmer_name: str) -> Dict[str, Any]:
+        """Mark farmer's active assignment as inactive and clear field."""
+        if using_admin_sdk and firestore_client:
+            try:
+                import time
+                # Find active assignment
+                docs = list(firestore_client.collection("assignments").where("farmerId", "==", farmer_id).where("status", "==", "active").stream())
+                if not docs:
+                    return {"success": False, "error": "No active assignment found."}
+                
+                assign_doc = docs[0]
+                assign_data = assign_doc.to_dict()
+                
+                # Mark inactive (keep for history)
+                assign_doc.reference.update({"status": "inactive", "unassignedAt": str(time.time())})
+                
+                # Clear field assignment
+                field_id = assign_data.get("fieldId")
+                if field_id:
+                    AgroDatabaseService.update_field(field_id, {
+                        "assignedFarmerId": None,
+                        "assignedFarmerName": None,
+                        "farmerId": None,
+                        "assignedTo": None,
+                    })
+                
+                return {"success": True, "fieldId": field_id}
+            except Exception as e:
+                logger.error(f"Firestore Admin unassign_farmer error: {e}")
+                return {"success": False, "error": str(e)}
+        
+        return {"success": True}  # Memory-mode fallback
+
+    @staticmethod
+    def get_assignment_history(userId: Optional[str] = None, role: Optional[str] = None) -> List[Dict[str, Any]]:
+        if using_admin_sdk and firestore_client:
+            try:
+                if role == "farmer" and userId:
+                    docs = firestore_client.collection("assignments").where("farmerId", "==", userId).stream()
+                elif role == "owner" and userId:
+                    docs = firestore_client.collection("assignments").where("ownerId", "==", userId).stream()
+                else:
+                    docs = firestore_client.collection("assignments").stream()
+                history = []
+                for d in docs:
+                    item = d.to_dict()
+                    item["id"] = d.id
+                    history.append(item)
+                return history
+            except Exception as e:
+                logger.error(f"Firestore Admin get_assignment_history error: {e}")
+        
+        try:
+            return _rest_get_collection("assignments")
+        except Exception:
+            return []
+
+    # ─── Conversations & Messages ─────────────────────────────────────────────────
+
+    @staticmethod
+    def get_conversations(userId: Optional[str] = None) -> List[Dict[str, Any]]:
+        if using_admin_sdk and firestore_client:
+            try:
+                if userId:
+                    docs = firestore_client.collection("conversations").where("participants", "array_contains", userId).stream()
+                else:
+                    docs = firestore_client.collection("conversations").stream()
+                convs = []
+                for d in docs:
+                    item = d.to_dict()
+                    item["id"] = d.id
+                    convs.append(item)
+                return convs
+            except Exception as e:
+                logger.error(f"Firestore Admin get_conversations error: {e}")
+        
+        try:
+            all_convs = _rest_get_collection("conversations")
+            if userId:
+                return [c for c in all_convs if userId in (c.get("participants") or [])]
+            return all_convs
+        except Exception:
+            return []
+
+    @staticmethod
+    def get_or_create_conversation(data: Dict[str, Any]) -> Dict[str, Any]:
+        import time
+        owner_id = data.get("ownerId")
+        farmer_id = data.get("farmerId")
+
+        if using_admin_sdk and firestore_client:
+            try:
+                docs = list(firestore_client.collection("conversations")
+                    .where("ownerId", "==", owner_id)
+                    .where("farmerId", "==", farmer_id)
+                    .stream())
+                if docs:
+                    item = docs[0].to_dict()
+                    item["id"] = docs[0].id
+                    return item
+                
+                conv_id = f"conv_{owner_id}_{farmer_id}_{int(time.time()*1000)}"
+                conv_data = {
+                    **data,
+                    "id": conv_id,
+                    "participants": [owner_id, farmer_id],
+                }
+                firestore_client.collection("conversations").document(conv_id).set(conv_data)
+                return conv_data
+            except Exception as e:
+                logger.error(f"Firestore Admin get_or_create_conversation error: {e}")
+        
+        conv_id = f"conv_{owner_id}_{farmer_id}"
+        return {**data, "id": conv_id, "participants": [owner_id, farmer_id]}
+
+    @staticmethod
+    def get_messages(conversation_id: str, userId: Optional[str] = None) -> List[Dict[str, Any]]:
+        if using_admin_sdk and firestore_client:
+            try:
+                # Access control check
+                if userId:
+                    conv_doc = firestore_client.collection("conversations").document(conversation_id).get()
+                    if conv_doc.exists:
+                        conv_data = conv_doc.to_dict()
+                        participants = conv_data.get("participants") or []
+                        if userId not in participants:
+                            return []
+                
+                docs = firestore_client.collection("messages").where("conversationId", "==", conversation_id).stream()
+                messages = []
+                for d in docs:
+                    item = d.to_dict()
+                    item["id"] = d.id
+                    messages.append(item)
+                return sorted(messages, key=lambda m: str(m.get("createdAt", "")))
+            except Exception as e:
+                logger.error(f"Firestore Admin get_messages error: {e}")
+        
+        try:
+            all_msgs = _rest_get_collection("messages")
+            return [m for m in all_msgs if m.get("conversationId") == conversation_id]
+        except Exception:
+            return []
+
+    @staticmethod
+    def save_message(msg_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        import time, random, string
+        msg_id = f"msg_{int(time.time()*1000)}_{''.join(random.choices(string.ascii_lowercase, k=5))}"
+        msg_data["id"] = msg_id
+
+        if using_admin_sdk and firestore_client:
+            try:
+                from google.cloud import firestore as fs
+                msg_data_to_save = {**msg_data, "createdAt": fs.SERVER_TIMESTAMP}
+                firestore_client.collection("messages").document(msg_id).set(msg_data_to_save)
+                
+                # Update conversation last message
+                conv_id = msg_data.get("conversationId")
+                if conv_id:
+                    firestore_client.collection("conversations").document(conv_id).update({
+                        "lastMessage": msg_data.get("text", "")[:100],
+                        "lastMessageAt": fs.SERVER_TIMESTAMP,
+                        "updatedAt": fs.SERVER_TIMESTAMP,
+                    })
+                
+                return msg_data
+            except Exception as e:
+                logger.error(f"Firestore Admin save_message error: {e}")
+        
+        try:
+            return _rest_save_document("messages", msg_id, msg_data)
+        except Exception:
+            return msg_data
+
+
+
 

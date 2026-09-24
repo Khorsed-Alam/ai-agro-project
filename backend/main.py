@@ -187,6 +187,123 @@ def create_log(log: dict):
     return AgroDatabaseService.save_log(log)
 
 
+# --- Farmers (Read role=farmer users) ---
+
+class AssignmentRequestModel(BaseModel):
+    ownerId: str
+    ownerName: str
+    farmerId: str
+    farmerName: str
+    farmId: str
+    farmName: str
+    fieldId: str
+    fieldName: str
+
+class AssignmentRequestStatus(BaseModel):
+    requestId: str
+    status: str  # approved | rejected | cancelled
+
+class UnassignModel(BaseModel):
+    farmerId: str
+    farmerName: str
+
+class ConversationModel(BaseModel):
+    ownerId: str
+    farmerId: str
+    ownerName: str
+    farmerName: str
+
+class MessageModel(BaseModel):
+    conversationId: str
+    senderId: str
+    senderName: str
+    receiverId: str
+    text: str
+
+@app.get("/api/farmers")
+def get_farmers():
+    """Get all registered farmers with their current assignment status."""
+    return AgroDatabaseService.get_farmers()
+
+@app.get("/api/farmers/available")
+def get_available_farmers():
+    """Get farmers who currently have no active assignment."""
+    all_farmers = AgroDatabaseService.get_farmers()
+    available = [f for f in all_farmers if not f.get("isAssigned", False)]
+    return available
+
+
+# --- Assignment Requests ---
+
+@app.post("/api/assignments/request")
+def create_assignment_request(req: AssignmentRequestModel):
+    """Owner sends assignment request to a farmer."""
+    result = AgroDatabaseService.create_assignment_request(req.dict())
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Request failed"))
+    return result
+
+@app.get("/api/assignments/requests")
+def get_assignment_requests(userId: Optional[str] = None, role: Optional[str] = None):
+    """Get assignment requests. Filter by userId and role (owner/farmer)."""
+    return AgroDatabaseService.get_assignment_requests(userId=userId, role=role)
+
+@app.post("/api/assignments/{request_id}/approve")
+def approve_assignment(request_id: str):
+    """Farmer approves an assignment request."""
+    result = AgroDatabaseService.update_assignment_request_status(request_id, "approved")
+    if not result:
+        raise HTTPException(status_code=404, detail="Assignment request not found")
+    return {"success": True, "status": "approved", "requestId": request_id}
+
+@app.post("/api/assignments/{request_id}/reject")
+def reject_assignment(request_id: str):
+    """Farmer rejects an assignment request."""
+    result = AgroDatabaseService.update_assignment_request_status(request_id, "rejected")
+    if not result:
+        raise HTTPException(status_code=404, detail="Assignment request not found")
+    return {"success": True, "status": "rejected", "requestId": request_id}
+
+@app.post("/api/assignments/unassign")
+def unassign_farmer(req: UnassignModel):
+    """Farmer unassigns themselves. Keeps history."""
+    result = AgroDatabaseService.unassign_farmer(req.farmerId, req.farmerName)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Unassign failed"))
+    return result
+
+@app.get("/api/assignments/history")
+def get_assignment_history(userId: Optional[str] = None, role: Optional[str] = None):
+    """Get assignment history records."""
+    return AgroDatabaseService.get_assignment_history(userId=userId, role=role)
+
+
+# --- Conversations & Messages (1:1 Chat) ---
+
+@app.get("/api/conversations")
+def get_conversations(userId: Optional[str] = None):
+    """Get conversations for a user."""
+    return AgroDatabaseService.get_conversations(userId=userId)
+
+@app.post("/api/conversations")
+def create_conversation(conv: ConversationModel):
+    """Get or create a 1:1 conversation between owner and farmer."""
+    return AgroDatabaseService.get_or_create_conversation(conv.dict())
+
+@app.get("/api/conversations/{conversation_id}/messages")
+def get_messages(conversation_id: str, userId: Optional[str] = None):
+    """Get messages for a conversation. Access control via userId."""
+    return AgroDatabaseService.get_messages(conversation_id, userId)
+
+@app.post("/api/conversations/{conversation_id}/messages")
+def send_message(conversation_id: str, msg: MessageModel):
+    """Send a message in a conversation."""
+    result = AgroDatabaseService.save_message({**msg.dict(), "conversationId": conversation_id})
+    if not result:
+        raise HTTPException(status_code=400, detail="Unable to send message")
+    return result
+
+
 # --- AI Endpoints ---
 
 @app.post("/api/ai/kmeans")

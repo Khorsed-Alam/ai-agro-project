@@ -13,6 +13,9 @@ import {
   where,
   serverTimestamp,
   updateDoc,
+  orderBy,
+  limit,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { GeoPolygon, GeoLineString } from '../components/map/AgroMap';
@@ -55,6 +58,8 @@ export interface Field {
   soilMoisture?: number;
   soilPH?: number;
   temperature?: number;
+  humidity?: number;
+  rainfall?: number;
   nitrogen?: number;
   phosphorus?: number;
   potassium?: number;
@@ -450,6 +455,36 @@ export async function createFarm(farm: Omit<Farm, 'farmId' | 'createdAt'>): Prom
       // Memory fallback
     }
   }
+
+  // Section 6: Automatically create 4 default fields (Field A, Field B, Field C, Field D)
+  const defaultFieldNames = ['Field A', 'Field B', 'Field C', 'Field D'];
+  const defaultCrops = ['Rice', 'Maize', 'Wheat', 'Potato'];
+  const defaultSoils = ['Salinas Silty Loam', 'Clay Loam', 'Chualar Sandy Loam', 'Pacheco Silt Loam'];
+
+  for (let i = 0; i < 4; i++) {
+    const fId = `field_${farmId}_${i + 1}`;
+    try {
+      await createField({
+        fieldId: fId,
+        id: fId,
+        farmId: farmId,
+        ownerId: farm.ownerId || 'owner_demo',
+        name: defaultFieldNames[i],
+        crop: defaultCrops[i],
+        areaAcres: 10 + i * 2,
+        soilType: defaultSoils[i],
+        latitude: 36.677 + i * 0.004,
+        longitude: -121.655 + i * 0.004,
+        status: 'Healthy',
+        soilMoisture: 45 + i * 3,
+        soilPH: 6.5 + i * 0.1,
+        temperature: 24.0 + i,
+      });
+    } catch (err) {
+      console.warn('Auto-create default field error:', err);
+    }
+  }
+
   return newFarm;
 }
 
@@ -488,7 +523,7 @@ export async function getFarms(ownerId?: string): Promise<Farm[]> {
     const dbFarms: Farm[] = [];
     snap.forEach((d) => {
       const data = d.data() as any;
-      const fId = data.farmId || data.id || d.id;
+      const fId = data.farmId || data.fieldId || d.id;
       const fOwner = data.ownerId || data.userId || ownerId || '';
       dbFarms.push({
         ...data,
@@ -636,7 +671,7 @@ export async function getOwnerFields(ownerId?: string): Promise<Field[]> {
     const dbFields: Field[] = [];
     snap.forEach((d) => {
       const data = d.data() as any;
-      const fId = data.fieldId || data.id || d.id;
+      const fId = data.farmId || data.fieldId || d.id;
       const fOwner = data.ownerId || data.userId || '';
       const assignedId = data.assignedFarmerId || data.farmerId || data.assignedTo || null;
       const assignedName = data.assignedFarmerName || data.farmerName || null;
@@ -679,6 +714,7 @@ export async function getFarmerAssignedFields(farmerId: string): Promise<Field[]
       const snap1 = await getDocs(q1);
       snap1.forEach((d) => {
         const data = d.data() as any;
+        if (data.deleted === true) return;
         const fId = data.fieldId || data.id || d.id;
         list.push({
           ...data,
@@ -700,7 +736,7 @@ export async function getFarmerAssignedFields(farmerId: string): Promise<Field[]
       const snap2 = await getDocs(q2);
       snap2.forEach((d) => {
         const data = d.data() as any;
-        const fId = data.fieldId || data.id || d.id;
+        const fId = data.farmId || data.fieldId || d.id;
         if (!list.some((item) => item.fieldId === fId || (item as any).id === fId)) {
           list.push({
             ...data,
@@ -1145,5 +1181,887 @@ export async function getFieldImages(fieldId: string): Promise<FieldImageRecord[
     }
   });
   return combined;
+}
+
+
+// ─── Assignment Requests ───────────────────────────────────────────────────────
+
+export type AssignmentRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'unassigned';
+
+export interface AssignmentRequest {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  farmerId: string;
+  farmerName: string;
+  farmId: string;
+  farmName: string;
+  fieldId: string;
+  fieldName: string;
+  status: AssignmentRequestStatus;
+  createdAt: any;
+  updatedAt?: any;
+  approvedAt?: any;
+  rejectedAt?: any;
+  unassignedAt?: any;
+}
+
+export interface AssignmentRecord {
+  id: string;
+  ownerId: string;
+  farmerId: string;
+  farmerName: string;
+  farmId: string;
+  farmName: string;
+  fieldId: string;
+  fieldName: string;
+  status: 'active' | 'inactive';
+  assignedAt: any;
+  unassignedAt?: any;
+}
+
+// In-memory fallbacks for offline/demo mode
+const inMemoryAssignmentRequests: AssignmentRequest[] = [];
+const inMemoryAssignments: AssignmentRecord[] = [];
+
+/**
+ * Get active assignment for a farmer (returns null if none)
+ * Business Rule: One farmer = one active field at a time
+ */
+export async function getFarmerActiveAssignment(farmerId: string): Promise<AssignmentRecord | null> {
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'assignments'),
+        where('farmerId', '==', farmerId),
+        where('status', '==', 'active'),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        return { id: d.id, ...d.data() } as AssignmentRecord;
+      }
+      return null;
+    } catch {
+      // fallthrough
+    }
+  }
+  return inMemoryAssignments.find((a) => a.farmerId === farmerId && a.status === 'active') || null;
+}
+
+/**
+ * Get active assignment for a field (returns null if none)
+ * Business Rule: One field = one active farmer at a time
+ */
+export async function getFieldActiveAssignment(fieldId: string): Promise<AssignmentRecord | null> {
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'assignments'),
+        where('fieldId', '==', fieldId),
+        where('status', '==', 'active'),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        return { id: d.id, ...d.data() } as AssignmentRecord;
+      }
+      return null;
+    } catch {
+      // fallthrough
+    }
+  }
+  return inMemoryAssignments.find((a) => a.fieldId === fieldId && a.status === 'active') || null;
+}
+
+/**
+ * Owner creates an assignment request for a farmer to work a field.
+ * Enforces: farmer must be available, field must be available.
+ */
+export async function createAssignmentRequest(params: {
+  ownerId: string;
+  ownerName: string;
+  farmerId: string;
+  farmerName: string;
+  farmId: string;
+  farmName: string;
+  fieldId: string;
+  fieldName: string;
+}): Promise<{ success: boolean; error?: string; request?: AssignmentRequest }> {
+
+  // Rule 1: Farmer must not have active assignment
+  const farmerActive = await getFarmerActiveAssignment(params.farmerId);
+  if (farmerActive) {
+    return { success: false, error: 'This farmer is already assigned to another field.' };
+  }
+
+  // Rule 2: Field must not have active farmer
+  const fieldActive = await getFieldActiveAssignment(params.fieldId);
+  if (fieldActive) {
+    return { success: false, error: 'This field already has an assigned farmer.' };
+  }
+
+  // Rule 3: No pending request to the same field or from the same farmer already pending
+  if (db) {
+    try {
+      const qExisting = query(
+        collection(db, 'assignment_requests'),
+        where('farmerId', '==', params.farmerId),
+        where('status', '==', 'pending')
+      );
+      const existingSnap = await getDocs(qExisting);
+      if (!existingSnap.empty) {
+        return { success: false, error: 'A pending assignment request already exists for this farmer.' };
+      }
+    } catch {
+      // Proceed
+    }
+  }
+
+  const requestId = `areq_${Date.now()}`;
+  const request: AssignmentRequest = {
+    ...params,
+    id: requestId,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+
+  inMemoryAssignmentRequests.unshift(request);
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'assignment_requests', requestId), {
+        ...request,
+        createdAt: serverTimestamp(),
+      });
+
+      // Notify farmer
+      const notifId = `notif_areq_${Date.now()}`;
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: params.farmerId,
+        title: 'New Field Assignment Request',
+        message: `${params.ownerName} wants to assign you to ${params.fieldName} at ${params.farmName}.`,
+        type: 'assignment',
+        read: false,
+        requestId,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('createAssignmentRequest Firestore error:', err);
+    }
+  }
+
+  notifyEcosystemChange();
+  return { success: true, request };
+}
+
+/**
+ * Get assignment requests by farmerId (farmer sees their incoming requests)
+ */
+export async function getFarmerAssignmentRequests(farmerId: string): Promise<AssignmentRequest[]> {
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'assignment_requests'),
+        where('farmerId', '==', farmerId)
+      );
+      const snap = await getDocs(q);
+      const list: AssignmentRequest[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as AssignmentRequest));
+      return list.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    } catch (err) {
+      console.error('getFarmerAssignmentRequests error:', err);
+    }
+  }
+  return inMemoryAssignmentRequests.filter((r) => r.farmerId === farmerId);
+}
+
+/**
+ * Get assignment requests by ownerId (owner sees outgoing requests)
+ */
+export async function getOwnerAssignmentRequests(ownerId: string): Promise<AssignmentRequest[]> {
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'assignment_requests'),
+        where('ownerId', '==', ownerId)
+      );
+      const snap = await getDocs(q);
+      const list: AssignmentRequest[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as AssignmentRequest));
+      return list.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+    } catch (err) {
+      console.error('getOwnerAssignmentRequests error:', err);
+    }
+  }
+  return inMemoryAssignmentRequests.filter((r) => r.ownerId === ownerId);
+}
+
+/**
+ * Farmer approves an assignment request.
+ * Creates an active assignment record and updates the field.
+ */
+export async function approveAssignmentRequest(requestId: string): Promise<{ success: boolean; error?: string }> {
+  let request: AssignmentRequest | null = null;
+
+  // Load from DB or memory
+  if (db) {
+    try {
+      const snap = await getDoc(doc(db, 'assignment_requests', requestId));
+      if (snap.exists()) {
+        request = { id: snap.id, ...snap.data() } as AssignmentRequest;
+      }
+    } catch {
+      // fallthrough
+    }
+  }
+  if (!request) {
+    request = inMemoryAssignmentRequests.find((r) => r.id === requestId) || null;
+  }
+  if (!request) return { success: false, error: 'Assignment request not found.' };
+  if (request.status !== 'pending') return { success: false, error: 'Request is no longer pending.' };
+
+  // Re-check business rules at approval time
+  const farmerActive = await getFarmerActiveAssignment(request.farmerId);
+  if (farmerActive) {
+    return { success: false, error: 'You already have an active field assignment. Please unassign first.' };
+  }
+  const fieldActive = await getFieldActiveAssignment(request.fieldId);
+  if (fieldActive) {
+    return { success: false, error: 'This field already has an assigned farmer.' };
+  }
+
+  const now = new Date().toISOString();
+
+  // Create active assignment record
+  const assignId = `assign_${Date.now()}`;
+  const assignmentRecord: AssignmentRecord = {
+    id: assignId,
+    ownerId: request.ownerId,
+    farmerId: request.farmerId,
+    farmerName: request.farmerName,
+    farmId: request.farmId,
+    farmName: request.farmName,
+    fieldId: request.fieldId,
+    fieldName: request.fieldName,
+    status: 'active',
+    assignedAt: now,
+  };
+  inMemoryAssignments.unshift(assignmentRecord);
+
+  // Update request status in memory
+  const memIdx = inMemoryAssignmentRequests.findIndex((r) => r.id === requestId);
+  if (memIdx !== -1) {
+    inMemoryAssignmentRequests[memIdx].status = 'approved';
+    inMemoryAssignmentRequests[memIdx].approvedAt = now;
+  }
+
+  if (db) {
+    try {
+      // Update request
+      await setDoc(doc(db, 'assignment_requests', requestId), {
+        status: 'approved',
+        approvedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Create assignments record
+      await setDoc(doc(db, 'assignments', assignId), {
+        ...assignmentRecord,
+        assignedAt: serverTimestamp(),
+      });
+
+      // Update field with assigned farmer
+      await assignFarmerToField(request.fieldId, request.farmerId, request.farmerName, request.ownerId);
+
+      // Notify owner
+      const notifId = `notif_approved_${Date.now()}`;
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: request.ownerId,
+        title: 'Assignment Request Approved',
+        message: `${request.farmerName} approved your assignment request for ${request.fieldName}.`,
+        type: 'assignment',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('approveAssignmentRequest Firestore error:', err);
+    }
+  } else {
+    // Offline: update field in memory
+    await assignFarmerToField(request.fieldId, request.farmerId, request.farmerName, request.ownerId);
+  }
+
+  notifyEcosystemChange();
+  return { success: true };
+}
+
+/**
+ * Farmer rejects an assignment request.
+ */
+export async function rejectAssignmentRequest(requestId: string): Promise<{ success: boolean; error?: string }> {
+  let request: AssignmentRequest | null = null;
+
+  if (db) {
+    try {
+      const snap = await getDoc(doc(db, 'assignment_requests', requestId));
+      if (snap.exists()) {
+        request = { id: snap.id, ...snap.data() } as AssignmentRequest;
+      }
+    } catch {
+      // fallthrough
+    }
+  }
+  if (!request) {
+    request = inMemoryAssignmentRequests.find((r) => r.id === requestId) || null;
+  }
+  if (!request) return { success: false, error: 'Assignment request not found.' };
+
+  const now = new Date().toISOString();
+
+  // Update in memory
+  const memIdx = inMemoryAssignmentRequests.findIndex((r) => r.id === requestId);
+  if (memIdx !== -1) {
+    inMemoryAssignmentRequests[memIdx].status = 'rejected';
+    inMemoryAssignmentRequests[memIdx].rejectedAt = now;
+  }
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'assignment_requests', requestId), {
+        status: 'rejected',
+        rejectedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Notify owner
+      const notifId = `notif_rejected_${Date.now()}`;
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: request.ownerId,
+        title: 'Assignment Request Rejected',
+        message: `${request.farmerName} rejected your assignment request for ${request.fieldName}.`,
+        type: 'assignment',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('rejectAssignmentRequest Firestore error:', err);
+    }
+  }
+
+  notifyEcosystemChange();
+  return { success: true };
+}
+
+/**
+ * Farmer unassigns themselves from their currently active field.
+ * Keeps assignment history intact.
+ */
+export async function unassignFarmerFromField(farmerId: string, farmerName: string): Promise<{ success: boolean; error?: string }> {
+  let activeAssignment = await getFarmerActiveAssignment(farmerId);
+  
+  if (!activeAssignment) {
+    const assignedFields = await getFarmerAssignedFields(farmerId);
+    if (assignedFields.length > 0) {
+      const f = assignedFields[0];
+      activeAssignment = {
+        id: f.fieldId || (f as any).id,
+        ownerId: f.ownerId || 'owner_demo',
+        farmerId: farmerId,
+        farmerName: farmerName,
+        farmId: f.farmId || 'farm_salinas_01',
+        farmName: 'My Farm',
+        fieldId: f.fieldId || (f as any).id,
+        fieldName: f.name,
+        status: 'active',
+        assignedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  if (!activeAssignment) {
+    return { success: false, error: 'No active assignment found.' };
+  }
+
+  const now = new Date().toISOString();
+
+  // Update in memory
+  const memIdx = inMemoryAssignments.findIndex((a) => a.id === activeAssignment.id);
+  if (memIdx !== -1) {
+    inMemoryAssignments[memIdx].status = 'inactive';
+    inMemoryAssignments[memIdx].unassignedAt = now;
+  }
+
+  // Clear field assignment
+  await assignFarmerToField(activeAssignment.fieldId, null, null, activeAssignment.ownerId);
+
+  if (db) {
+    try {
+      // Mark assignment as inactive (do NOT delete — keep history)
+      await setDoc(doc(db, 'assignments', activeAssignment.id), {
+        status: 'inactive',
+        unassignedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Also update the matching assignment_request to unassigned
+      const q = query(
+        collection(db, 'assignment_requests'),
+        where('farmerId', '==', farmerId),
+        where('fieldId', '==', activeAssignment.fieldId),
+        where('status', '==', 'approved')
+      );
+      const reqSnap = await getDocs(q);
+      for (const d of reqSnap.docs) {
+        await setDoc(d.ref, { status: 'unassigned', unassignedAt: serverTimestamp() }, { merge: true });
+      }
+
+      // Notify owner
+      const notifId = `notif_unassign_${Date.now()}`;
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: activeAssignment.ownerId,
+        title: 'Farmer Unassigned',
+        message: `${farmerName} has unassigned from ${activeAssignment.fieldName}.`,
+        type: 'assignment',
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('unassignFarmerFromField Firestore error:', err);
+    }
+  }
+
+  notifyEcosystemChange();
+  return { success: true };
+}
+
+/**
+ * Get assignment history for a farmer
+ */
+export async function getFarmerAssignmentHistory(farmerId: string): Promise<AssignmentRecord[]> {
+  if (db) {
+    try {
+      const q = query(collection(db, 'assignments'), where('farmerId', '==', farmerId));
+      const snap = await getDocs(q);
+      const list: AssignmentRecord[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as AssignmentRecord));
+      return list.sort((a, b) => (b.assignedAt > a.assignedAt ? 1 : -1));
+    } catch (err) {
+      console.error('getFarmerAssignmentHistory error:', err);
+    }
+  }
+  return inMemoryAssignments.filter((a) => a.farmerId === farmerId);
+}
+
+/**
+ * Get assignment history for an owner's farms
+ */
+export async function getOwnerAssignmentHistory(ownerId: string): Promise<AssignmentRecord[]> {
+  if (db) {
+    try {
+      const q = query(collection(db, 'assignments'), where('ownerId', '==', ownerId));
+      const snap = await getDocs(q);
+      const list: AssignmentRecord[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as AssignmentRecord));
+      return list.sort((a, b) => (b.assignedAt > a.assignedAt ? 1 : -1));
+    } catch (err) {
+      console.error('getOwnerAssignmentHistory error:', err);
+    }
+  }
+  return inMemoryAssignments.filter((a) => a.ownerId === ownerId);
+}
+
+
+// ─── 1-to-1 Chat System ───────────────────────────────────────────────────────
+
+export interface ConversationRecord {
+  id: string;
+  participants: string[];  // [ownerId, farmerId]
+  ownerId: string;
+  farmerId: string;
+  ownerName: string;
+  farmerName: string;
+  lastMessage?: string;
+  lastMessageAt?: any;
+  createdAt: any;
+  updatedAt?: any;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  text: string;
+  createdAt: any;
+  read: boolean;
+}
+
+// In-memory chat fallbacks
+const inMemoryConversations: ConversationRecord[] = [];
+const inMemoryMessages: ChatMessage[] = [];
+
+/**
+ * Get or create a 1:1 conversation between owner and farmer.
+ * Prevents duplicate conversations.
+ */
+export async function getOrCreateConversation(params: {
+  ownerId: string;
+  farmerId: string;
+  ownerName: string;
+  farmerName: string;
+}): Promise<ConversationRecord> {
+  // Try to find existing conversation
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'conversations'),
+        where('ownerId', '==', params.ownerId),
+        where('farmerId', '==', params.farmerId)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        return { id: d.id, ...d.data() } as ConversationRecord;
+      }
+    } catch {
+      // fallthrough
+    }
+  } else {
+    const existing = inMemoryConversations.find(
+      (c) => c.ownerId === params.ownerId && c.farmerId === params.farmerId
+    );
+    if (existing) return existing;
+  }
+
+  // Create new conversation
+  const convId = `conv_${params.ownerId}_${params.farmerId}_${Date.now()}`;
+  const conversation: ConversationRecord = {
+    id: convId,
+    participants: [params.ownerId, params.farmerId],
+    ownerId: params.ownerId,
+    farmerId: params.farmerId,
+    ownerName: params.ownerName,
+    farmerName: params.farmerName,
+    createdAt: new Date().toISOString(),
+  };
+
+  inMemoryConversations.unshift(conversation);
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'conversations', convId), {
+        ...conversation,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('getOrCreateConversation Firestore error:', err);
+    }
+  }
+
+  return conversation;
+}
+
+/**
+ * Get all conversations for a user (owner or farmer)
+ * Access control: only conversations where userId is a participant
+ */
+export async function getUserConversations(userId: string): Promise<ConversationRecord[]> {
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'conversations'),
+        where('participants', 'array-contains', userId)
+      );
+      const snap = await getDocs(q);
+      const list: ConversationRecord[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as ConversationRecord));
+      return list.sort((a, b) => {
+        const aTime = a.lastMessageAt || a.createdAt;
+        const bTime = b.lastMessageAt || b.createdAt;
+        return bTime > aTime ? 1 : -1;
+      });
+    } catch (err) {
+      console.error('getUserConversations error:', err);
+    }
+  }
+  return inMemoryConversations.filter((c) => c.participants.includes(userId));
+}
+
+/**
+ * Send a message in a conversation.
+ * Access control: sender must be a participant.
+ */
+export async function sendChatMessage(params: {
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  receiverId: string;
+  text: string;
+}): Promise<{ success: boolean; message?: ChatMessage; error?: string }> {
+  if (!params.text.trim()) {
+    return { success: false, error: 'Message cannot be empty.' };
+  }
+
+  // Verify sender is a participant
+  if (db) {
+    try {
+      const convSnap = await getDoc(doc(db, 'conversations', params.conversationId));
+      if (convSnap.exists()) {
+        const convData = convSnap.data();
+        if (!convData.participants?.includes(params.senderId)) {
+          return { success: false, error: 'You cannot access this conversation.' };
+        }
+      }
+    } catch {
+      // Proceed
+    }
+  }
+
+  const msgId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const message: ChatMessage = {
+    id: msgId,
+    conversationId: params.conversationId,
+    senderId: params.senderId,
+    senderName: params.senderName,
+    receiverId: params.receiverId,
+    text: params.text.trim(),
+    createdAt: new Date().toISOString(),
+    read: false,
+  };
+
+  inMemoryMessages.unshift(message);
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'messages', msgId), {
+        ...message,
+        createdAt: serverTimestamp(),
+      });
+
+      // Update conversation last message
+      await setDoc(doc(db, 'conversations', params.conversationId), {
+        lastMessage: params.text.trim().slice(0, 100),
+        lastMessageAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (err) {
+      console.error('sendChatMessage Firestore error:', err);
+      return { success: false, error: 'Unable to send message. Please try again.' };
+    }
+  }
+
+  notifyEcosystemChange();
+  return { success: true, message };
+}
+
+/**
+ * Get messages for a conversation (with access control check)
+ */
+export async function getConversationMessages(
+  conversationId: string,
+  userId: string
+): Promise<{ success: boolean; messages?: ChatMessage[]; error?: string }> {
+  // Verify access
+  if (db) {
+    try {
+      const convSnap = await getDoc(doc(db, 'conversations', conversationId));
+      if (convSnap.exists()) {
+        const convData = convSnap.data();
+        if (!convData.participants?.includes(userId)) {
+          return { success: false, error: 'You cannot access this conversation.' };
+        }
+      }
+    } catch {
+      // Proceed with query
+    }
+  }
+
+  if (db) {
+    try {
+      const q = query(
+        collection(db, 'messages'),
+        where('conversationId', '==', conversationId),
+        orderBy('createdAt', 'asc')
+      );
+      const snap = await getDocs(q);
+      const messages: ChatMessage[] = [];
+      snap.forEach((d) => messages.push({ id: d.id, ...d.data() } as ChatMessage));
+      return { success: true, messages };
+    } catch (err) {
+      console.error('getConversationMessages error:', err);
+    }
+  }
+
+  // Offline fallback
+  const messages = inMemoryMessages
+    .filter((m) => m.conversationId === conversationId)
+    .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+  return { success: true, messages };
+}
+
+/**
+ * Subscribe to real-time messages in a conversation.
+ * Returns unsubscribe function.
+ */
+export function subscribeToMessages(
+  conversationId: string,
+  _userId: string,
+  onMessages: (messages: ChatMessage[]) => void
+): () => void {
+  if (!db) {
+    // Offline: return current messages once
+    const msgs = inMemoryMessages
+      .filter((m) => m.conversationId === conversationId)
+      .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+    onMessages(msgs);
+    return () => {};
+  }
+
+  try {
+    const q = query(
+      collection(db, 'messages'),
+      where('conversationId', '==', conversationId),
+      orderBy('createdAt', 'asc')
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const messages: ChatMessage[] = [];
+      snap.forEach((d) => messages.push({ id: d.id, ...d.data() } as ChatMessage));
+      onMessages(messages);
+    });
+    return unsubscribe;
+  } catch (err) {
+    console.error('subscribeToMessages error:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Subscribe to real-time assignment requests for a farmer.
+ */
+export function subscribeToFarmerRequests(
+  farmerId: string,
+  onRequests: (requests: AssignmentRequest[]) => void
+): () => void {
+  if (!db) return () => {};
+  try {
+    const q = query(
+      collection(db, 'assignment_requests'),
+      where('farmerId', '==', farmerId)
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const list: AssignmentRequest[] = [];
+      snap.forEach((d) => list.push({ id: d.id, ...d.data() } as AssignmentRequest));
+      list.sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
+      onRequests(list);
+    });
+    return unsubscribe;
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * Create default 4 fields when a new farm is created
+ */
+export async function createDefaultFieldsForFarm(
+  farmId: string,
+  ownerId: string,
+  _farmName: string
+): Promise<Field[]> {
+  const defaultFields = [
+    { name: 'Field A', crop: 'Rice', soilType: 'Silty Loam', lat: 36.677, lng: -121.655 },
+    { name: 'Field B', crop: 'Maize', soilType: 'Clay Loam', lat: 36.672, lng: -121.650 },
+    { name: 'Field C', crop: 'Wheat', soilType: 'Sandy Loam', lat: 36.680, lng: -121.645 },
+    { name: 'Field D', crop: 'Tomato', soilType: 'Silt Loam', lat: 36.675, lng: -121.662 },
+  ];
+
+  const created: Field[] = [];
+  for (const f of defaultFields) {
+    const field = await createField({
+      farmId,
+      ownerId,
+      name: f.name,
+      crop: f.crop,
+      areaAcres: 10,
+      soilType: f.soilType,
+      latitude: f.lat,
+      longitude: f.lng,
+      status: 'Healthy',
+      soilMoisture: 50,
+      soilPH: 6.5,
+      temperature: 28,
+      waterRequirement: 'Moderate',
+    });
+    created.push(field);
+  }
+  return created;
+}
+
+/**
+ * Delete a field by ID (with Firestore + memory cleanup)
+ */
+export async function deleteField(fieldId: string): Promise<boolean> {
+  // Remove from memory
+  const idx = FALLBACK_FIELDS.findIndex(
+    (f) => f.fieldId === fieldId || (f as any).id === fieldId || (f as any).docId === fieldId
+  );
+  if (idx !== -1) FALLBACK_FIELDS.splice(idx, 1);
+  syncEcosystemCache();
+
+  if (db) {
+    try {
+      const { deleteDoc } = await import('firebase/firestore');
+      const directRef = doc(db, 'fields', fieldId);
+      const directSnap = await getDoc(directRef);
+      if (directSnap.exists()) {
+        try {
+          await deleteDoc(directRef);
+        } catch {
+          await setDoc(directRef, { deleted: true, deletedAt: serverTimestamp() }, { merge: true });
+        }
+      }
+
+      const q = query(collection(db, 'fields'), where('fieldId', '==', fieldId));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        try {
+          await deleteDoc(d.ref);
+        } catch {
+          await setDoc(d.ref, { deleted: true, deletedAt: serverTimestamp() }, { merge: true });
+        }
+      }
+    } catch (err) {
+      console.error('deleteField error:', err);
+    }
+  }
+
+  notifyEcosystemChange();
+  return true;
+}
+
+/**
+ * Delete a farm by ID
+ */
+export async function deleteFarm(farmId: string): Promise<boolean> {
+  const idx = FALLBACK_FARMS.findIndex((f) => f.farmId === farmId);
+  if (idx !== -1) FALLBACK_FARMS.splice(idx, 1);
+  syncEcosystemCache();
+  notifyEcosystemChange();
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'farms', farmId), { deleted: true, deletedAt: serverTimestamp() }, { merge: true });
+    } catch (err) {
+      console.error('deleteFarm error:', err);
+    }
+  }
+  return true;
 }
 

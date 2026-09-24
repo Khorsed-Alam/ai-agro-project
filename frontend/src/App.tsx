@@ -23,6 +23,7 @@ import { Algorithms } from './pages/Algorithms';
 import { Resources } from './pages/Resources';
 import { History } from './pages/History';
 import { Settings } from './pages/Settings';
+import { ChatPage } from './pages/ChatPage';
 
 export const App: React.FC = () => {
   return (
@@ -50,6 +51,7 @@ export const App: React.FC = () => {
             {/* Extension Role Workspaces */}
             <Route path="owner-dashboard" element={<OwnerDashboard />} />
             <Route path="farmer-dashboard" element={<FarmerDashboard />} />
+            <Route path="messages" element={<ChatPage />} />
 
             <Route path="my-farm" element={<MyFarm />} />
             <Route path="fields" element={<Fields />} />

@@ -29,6 +29,7 @@ export const Navigation: React.FC<NavigationProps> = ({ health, mobileOpen = fal
       label: 'Main',
       items: [
         { name: 'Dashboard', path: '/dashboard', icon: 'home' },
+        { name: '1-to-1 Chat', path: '/messages', icon: 'chat' },
         { name: 'My Farm', path: '/my-farm', icon: 'location_on' },
         { name: 'Fields', path: '/fields', icon: 'layers' },
         { name: 'Weather', path: '/weather', icon: 'wb_sunny' },
