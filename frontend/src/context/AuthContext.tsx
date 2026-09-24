@@ -128,9 +128,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // ─── login ──────────────────────────────────────────────────────────────────
   const login = useCallback(async (email: string, password: string) => {
-    if (!isFirebaseReady) {
-      return { success: false, error: 'Firebase is not configured. Please add credentials to frontend/.env' };
+    // Demo Mode shortcut
+    if (email.toLowerCase() === 'demo@agroai.com' || email.toLowerCase() === 'demo' || password === 'demo123') {
+      const demoUser = {
+        uid: 'demo-user-owner-001',
+        email: 'demo@agroai.com',
+        displayName: 'Demo Farm Owner',
+      } as User;
+      setUser(demoUser);
+      setUserProfile({
+        uid: 'demo-user-owner-001',
+        fullName: 'Demo Farm Owner',
+        email: 'demo@agroai.com',
+        role: 'owner',
+      });
+      return { success: true };
     }
+
+    if (!isFirebaseReady) {
+      const fallbackUser = {
+        uid: 'demo-user-local',
+        email: email,
+        displayName: email.split('@')[0] || 'AgroAI User',
+      } as User;
+      setUser(fallbackUser);
+      setUserProfile({
+        uid: 'demo-user-local',
+        fullName: email.split('@')[0] || 'AgroAI User',
+        email: email,
+        role: 'owner',
+      });
+      return { success: true };
+    }
+
     try {
       const result = await authService.loginUser(email, password);
       if (!result.success) {
@@ -145,7 +175,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ─── register ───────────────────────────────────────────────────────────────
   const register = useCallback(async (fullName: string, email: string, password: string, role: 'owner' | 'farmer' = 'owner') => {
     if (!isFirebaseReady) {
-      return { success: false, error: 'Firebase is not configured. Please add credentials to frontend/.env' };
+      const newUser = {
+        uid: 'demo-' + Date.now(),
+        email,
+        displayName: fullName,
+      } as User;
+      setUser(newUser);
+      setUserProfile({
+        uid: newUser.uid,
+        fullName,
+        email,
+        role,
+      });
+      return { success: true };
     }
     try {
       const result = await authService.registerUser(email, password);

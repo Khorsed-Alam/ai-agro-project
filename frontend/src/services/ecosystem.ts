@@ -38,6 +38,7 @@ export interface Farm {
 }
 
 export interface Field {
+  id?: string;
   fieldId: string;
   farmId: string;
   ownerId: string;
@@ -51,7 +52,15 @@ export interface Field {
   path?: GeoLineString | null;
   assignedFarmerId?: string | null;
   assignedFarmerName?: string | null;
-  status: 'Healthy' | 'Needs Attention' | 'Critical' | 'Dry';
+  soilMoisture?: number;
+  soilPH?: number;
+  temperature?: number;
+  nitrogen?: number;
+  phosphorus?: number;
+  potassium?: number;
+  cropGrowthStage?: string;
+  waterRequirement?: string;
+  status: 'Healthy' | 'Needs Attention' | 'Critical' | 'Dry' | 'Moderate';
   createdAt?: any;
   updatedAt?: any;
 }

@@ -441,6 +441,45 @@ export const Login: React.FC = () => {
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
 
+            {/* Quick Demo Login Option */}
+            <div style={{ marginTop: '12px' }}>
+              <button
+                type="button"
+                onClick={async () => {
+                  setEmail('demo@agroai.com');
+                  setPassword('demo123');
+                  setSubmitting(true);
+                  await login('demo@agroai.com', 'demo123');
+                  setSubmitting(false);
+                  const from = (location.state as any)?.from?.pathname || '/dashboard';
+                  navigate(from, { replace: true });
+                }}
+                disabled={submitting || loading}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: '#f0fdf4',
+                  color: '#2d6a4f',
+                  border: '1.5px solid #bbf7d0',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  fontFamily: 'Inter, sans-serif',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  transition: 'background 0.15s, border-color 0.15s',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+                  bolt
+                </span>
+                Quick Demo Login (1-Click)
+              </button>
+            </div>
+
             <style>{`
               @keyframes spin { to { transform: rotate(360deg); } }
               #login-submit-btn:hover:not(:disabled) { background: #1b4332; }

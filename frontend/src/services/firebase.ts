@@ -22,19 +22,19 @@ import {
   type Firestore
 } from 'firebase/firestore';
 
-// STEP 1: Firebase Configuration using Vite Environment Variables
+// STEP 1: Firebase Configuration using Vite Environment Variables (with working project fallbacks for cloned repos)
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || ''
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyC3wiPdZQ3NTocZp6cqjzQb14EIHwzAE9E',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'agroai-b72ec.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'agroai-b72ec',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'agroai-b72ec.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '498924273287',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:498924273287:web:f90a357a4c849d8f740222'
 };
 
 export const isFirebaseConfigured = (): boolean => {
-  const key = import.meta.env.VITE_FIREBASE_API_KEY;
-  const project = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+  const key = firebaseConfig.apiKey;
+  const project = firebaseConfig.projectId;
   return Boolean(key && project && key !== '' && project !== '' && key !== 'demo-api-key');
 };
 
