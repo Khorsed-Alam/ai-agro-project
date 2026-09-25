@@ -7,6 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
 import type {
   ConversationRecord,
   ChatMessage,
@@ -23,6 +24,7 @@ import {
 
 export const ChatPage: React.FC = () => {
   const { user, userProfile, userRole } = useAuth();
+  const { t, translateEnum, formatDate, formatNumber } = useI18n();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
@@ -138,7 +140,7 @@ export const ChatPage: React.FC = () => {
         setMessages((prev) => [...prev, result.message!]);
       }
     } else {
-      setSendError(result.error || 'Failed to send message.');
+      setSendError(t('chat.failedToSend'));
     }
     setSending(false);
   };
@@ -159,10 +161,10 @@ export const ChatPage: React.FC = () => {
       const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
       const now = new Date();
       const diff = now.getTime() - date.getTime();
-      if (diff < 60000) return 'Just now';
-      if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-      if (diff < 86400000) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      if (diff < 60000) return t('common.justNow');
+      if (diff < 3600000) return t('common.minutesAgo', { count: formatNumber(Math.floor(diff / 60000)) });
+      if (diff < 86400000) return formatDate(date, { hour: '2-digit', minute: '2-digit' });
+      return formatDate(date, { month: 'short', day: 'numeric' });
     } catch {
       return '';
     }
@@ -172,7 +174,7 @@ export const ChatPage: React.FC = () => {
     if (!timestamp) return '';
     try {
       const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return formatDate(date, { hour: '2-digit', minute: '2-digit' });
     } catch {
       return '';
     }
@@ -185,12 +187,10 @@ export const ChatPage: React.FC = () => {
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-secondary text-[22px]">chat</span>
-            <h1 className="font-headline-lg text-headline-lg text-on-surface">Messages</h1>
+            <h1 className="font-headline-lg text-headline-lg text-on-surface">{t('chat.title')}</h1>
           </div>
           <p className="font-body-sm text-on-surface-variant text-sm">
-            {userRole === 'owner'
-              ? 'Direct messages with your assigned farmers'
-              : 'Direct messages with your farm owner'}
+            {userRole === 'owner' ? t('chat.ownerDescription') : t('chat.farmerDescription')}
           </p>
         </div>
 
@@ -202,7 +202,7 @@ export const ChatPage: React.FC = () => {
             className="h-9 px-space-md rounded-xl bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1.5 shadow-sm"
           >
             <span className="material-symbols-outlined text-[18px]">person_add</span>
-            <span>New Message</span>
+            <span>{t('chat.newMessage')}</span>
           </button>
         )}
       </div>
@@ -211,17 +211,18 @@ export const ChatPage: React.FC = () => {
       {showNewConvPanel && userRole === 'owner' && (
         <div className="bg-surface-container-lowest rounded-xl border border-outline-variant/30 p-space-md flex flex-col gap-space-sm shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="font-headline-sm text-sm text-on-surface font-semibold">Start Conversation With</h3>
+            <h3 className="font-headline-sm text-sm text-on-surface font-semibold">{t('chat.startWith')}</h3>
             <button
               type="button"
               onClick={() => setShowNewConvPanel(false)}
               className="text-on-surface-variant hover:text-on-surface"
+              aria-label={t('common.close')}
             >
               <span className="material-symbols-outlined text-[18px]">close</span>
             </button>
           </div>
           {farmers.length === 0 ? (
-            <p className="text-xs text-on-surface-variant text-center py-4">No registered farmers found.</p>
+            <p className="text-xs text-on-surface-variant text-center py-4">{t('chat.noFarmers')}</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {farmers.map((farmer) => (
@@ -230,6 +231,7 @@ export const ChatPage: React.FC = () => {
                   type="button"
                   disabled={startingConvWith === farmer.uid}
                   onClick={() => handleStartConversation(farmer)}
+                  aria-label={t('accessibility.openConversation', { name: farmer.fullName })}
                   className="flex items-center gap-3 p-3 rounded-xl bg-surface border border-outline-variant/20 hover:border-primary hover:bg-primary-container/10 transition-all text-left disabled:opacity-60"
                 >
                   <div className="w-9 h-9 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-sm flex-shrink-0">
@@ -255,22 +257,20 @@ export const ChatPage: React.FC = () => {
         <div className="w-72 flex-shrink-0 bg-surface-container-lowest rounded-xl border border-outline-variant/30 flex flex-col overflow-hidden shadow-sm">
           <div className="p-space-sm border-b border-outline-variant/20">
             <h3 className="font-headline-sm text-xs text-on-surface-variant uppercase tracking-wider font-semibold px-1">
-              Conversations ({conversations.length})
+              {t('chat.conversations', { count: formatNumber(conversations.length) })}
             </h3>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {loading ? (
-              <div className="flex items-center justify-center p-8">
-                <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <div className="flex items-center justify-center p-8" aria-label={t('accessibility.loading')} role="status">
+                <span className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" aria-hidden="true" />
               </div>
             ) : conversations.length === 0 ? (
               <div className="flex flex-col items-center justify-center p-8 text-center gap-3">
                 <span className="material-symbols-outlined text-on-surface-variant text-[32px]">chat_bubble_outline</span>
                 <p className="text-xs text-on-surface-variant">
-                  {userRole === 'owner'
-                    ? 'Click "New Message" to start a conversation with a farmer.'
-                    : 'No conversations yet. Your owner will reach out when you are assigned.'}
+                  {userRole === 'owner' ? t('chat.ownerEmpty') : t('chat.farmerEmpty')}
                 </p>
               </div>
             ) : (
@@ -281,6 +281,7 @@ export const ChatPage: React.FC = () => {
                     key={conv.id}
                     type="button"
                     onClick={() => handleSelectConversation(conv)}
+                    aria-label={t('accessibility.openConversation', { name: getConvDisplayName(conv) || t('common.unknown') })}
                     className={`w-full flex items-center gap-3 p-3 px-space-sm transition-all text-left border-b border-outline-variant/10 last:border-0 ${
                       isSelected
                         ? 'bg-primary-container/15 border-l-4 border-l-primary'
@@ -316,11 +317,9 @@ export const ChatPage: React.FC = () => {
                 <span className="material-symbols-outlined text-secondary text-[38px]">forum</span>
               </div>
               <div className="flex flex-col gap-2">
-                <h3 className="font-headline-md text-on-surface text-lg font-semibold">Select a Conversation</h3>
+                <h3 className="font-headline-md text-on-surface text-lg font-semibold">{t('chat.selectConversation')}</h3>
                 <p className="font-body-sm text-on-surface-variant text-sm max-w-xs">
-                  {userRole === 'owner'
-                    ? 'Choose a conversation from the list or start a new one with a farmer.'
-                    : 'Select a conversation to view and send messages.'}
+                  {userRole === 'owner' ? t('chat.ownerSelectHelp') : t('chat.farmerSelectHelp')}
                 </p>
               </div>
             </div>
@@ -334,7 +333,7 @@ export const ChatPage: React.FC = () => {
                 <div className="flex flex-col">
                   <span className="font-semibold text-sm text-on-surface">{getConvDisplayName(selectedConv)}</span>
                   <span className="text-[11px] text-on-surface-variant">
-                    {userRole === 'owner' ? 'Farmer' : 'Farm Owner'}
+                    {translateEnum('common.enums.roles', userRole === 'owner' ? 'farmer' : 'farm_owner')}
                   </span>
                 </div>
               </div>
@@ -344,7 +343,7 @@ export const ChatPage: React.FC = () => {
                 {messages.length === 0 ? (
                   <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-16">
                     <span className="material-symbols-outlined text-on-surface-variant text-[30px]">chat</span>
-                    <p className="text-xs text-on-surface-variant">No messages yet. Send the first one!</p>
+                    <p className="text-xs text-on-surface-variant">{t('chat.noMessages')}</p>
                   </div>
                 ) : (
                   messages.map((msg) => {
@@ -383,7 +382,7 @@ export const ChatPage: React.FC = () => {
               {/* Message Input */}
               <div className="border-t border-outline-variant/20 p-space-sm bg-surface-container-lowest">
                 {sendError && (
-                  <div className="mb-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                  <div className="mb-2 px-3 py-1.5 bg-error-container border border-error rounded-lg text-xs text-on-error-container">
                     {sendError}
                   </div>
                 )}
@@ -392,7 +391,8 @@ export const ChatPage: React.FC = () => {
                     type="text"
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
-                    placeholder="Type a message..."
+                    placeholder={t('chat.typeMessage')}
+                    aria-label={t('chat.typeMessage')}
                     disabled={sending}
                     className="flex-1 bg-surface border border-outline-variant/40 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 resize-none"
                     maxLength={1000}
@@ -407,17 +407,22 @@ export const ChatPage: React.FC = () => {
                     type="submit"
                     disabled={sending || !messageText.trim()}
                     className="h-10 w-10 rounded-xl bg-primary text-on-primary flex items-center justify-center hover:bg-primary-container transition-all disabled:opacity-50 flex-shrink-0"
-                    title="Send message (Enter)"
+                    title={t('chat.sendMessage')}
+                    aria-label={t('chat.sendMessage')}
                   >
                     {sending ? (
-                      <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      <span
+                        className="w-4 h-4 rounded-full border-2 border-on-primary border-t-transparent animate-spin"
+                        role="status"
+                        aria-label={t('accessibility.loading')}
+                      />
                     ) : (
                       <span className="material-symbols-outlined text-[20px]">send</span>
                     )}
                   </button>
                 </form>
                 <p className="text-[10px] text-on-surface-variant mt-1 text-right">
-                  Press Enter to send
+                  {t('chat.pressEnter')}
                 </p>
               </div>
             </>

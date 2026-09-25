@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
+import { useI18n } from '../i18n';
+
+const forecastAnchor = new Date();
 
 export const Weather: React.FC = () => {
+  const { t, translateEnum, formatDate, formatNumber } = useI18n();
   const [syncing, setSyncing] = useState(false);
 
   const handleSync = () => {
     setSyncing(true);
     setTimeout(() => setSyncing(false), 1000);
   };
+
+  const getForecastDay = (dayOffset: number) => dayOffset === 0
+    ? t('common.today')
+    : formatDate(new Date(forecastAnchor.getTime() + dayOffset * 86400000), { weekday: 'short' });
 
   return (
     <div className="p-margin md:p-margin-lg space-y-space-xl max-w-[1600px] mx-auto w-full">
@@ -15,15 +23,15 @@ export const Weather: React.FC = () => {
         <div className="space-y-space-xs min-w-0">
           <div className="flex items-center gap-space-xs text-on-surface-variant font-label-sm text-label-sm uppercase tracking-wider">
             <span className="material-symbols-outlined text-[16px] text-secondary">routine</span>
-            <span>Micrometeorological Observation Grid</span>
+            <span>{t('weather.observationGrid')}</span>
             <span>•</span>
-            <span className="text-secondary font-semibold">Live Telemetry</span>
+            <span className="text-secondary font-semibold">{t('weather.liveTelemetry')}</span>
           </div>
           <h1 className="font-headline-lg text-headline-lg text-on-surface font-semibold">
-            Agricultural Weather Intelligence
+            {t('weather.title')}
           </h1>
           <p className="font-body-md text-body-md text-on-surface-variant max-w-3xl">
-            Monitor microclimate conditions that directly affect crop transpiration, disease sporulation, and irrigation scheduling.
+            {t('weather.description')}
           </p>
         </div>
 
@@ -31,11 +39,11 @@ export const Weather: React.FC = () => {
           <div className="flex items-center gap-space-xs">
             <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
             <span className="font-data-mono text-data-mono text-on-surface-variant">
-              NOAA Mesonet + Davis Vantage Pro2 (Salinas Sector 4)
+              {t('weather.station', 'NOAA Mesonet + Davis Vantage Pro2 (Salinas Sector {sector})', { sector: formatNumber(4) })}
             </span>
           </div>
           <span className="text-outline-variant font-label-md text-label-md">•</span>
-          <span className="font-label-md text-label-md text-on-surface-variant">Synced 8m ago</span>
+          <span className="font-label-md text-label-md text-on-surface-variant">{t('weather.syncedAgo', { time: formatNumber(8) })}</span>
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -44,7 +52,7 @@ export const Weather: React.FC = () => {
             <span className={`material-symbols-outlined text-[15px] ${syncing ? 'animate-spin' : ''}`}>
               refresh
             </span>
-            <span>Sync</span>
+            <span>{t('common.sync')}</span>
           </button>
         </div>
       </div>
@@ -57,49 +65,49 @@ export const Weather: React.FC = () => {
           <div>
             <div className="flex items-center justify-between">
               <span className="px-2.5 py-1 rounded-md bg-secondary-container/40 text-on-secondary-container font-label-sm text-label-sm font-semibold tracking-wide">
-                FIELD AMBIENT STATUS
+                {t('weather.fieldAmbientStatus')}
               </span>
               <div className="flex items-center gap-1 text-on-surface-variant font-data-mono text-data-mono">
                 <span className="material-symbols-outlined text-[16px] text-secondary">thermostat</span>
-                <span>Sensor Depth: 1.5m</span>
+                <span>{t('weather.sensorDepth')}</span>
               </div>
             </div>
 
             <div className="mt-space-lg flex items-baseline gap-space-sm">
               <span className="font-display-lg text-[64px] leading-none text-primary font-semibold tracking-tight">
-                22.8°
+                {formatNumber(22.8, { maximumFractionDigits: 1 })}°
               </span>
-              <span className="font-headline-sm text-headline-sm text-on-surface-variant">C</span>
+              <span className="font-headline-sm text-headline-sm text-on-surface-variant">{t('weather.celsius', 'C')}</span>
               <div className="ml-space-sm pl-space-sm border-l border-outline-variant/30 flex flex-col">
-                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Thermal Range</span>
-                <span className="font-data-mono text-data-mono text-on-surface font-semibold">H: 26°C · L: 14°C</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.thermalRange')}</span>
+                <span className="font-data-mono text-data-mono text-on-surface font-semibold">{t('weather.high', 'H')}: {formatNumber(26)}°C · {t('weather.low', 'L')}: {formatNumber(14)}°C</span>
               </div>
             </div>
 
             <div className="mt-space-sm flex items-center gap-space-xs text-on-surface">
               <span className="material-symbols-outlined text-secondary text-[24px]">partly_cloudy_day</span>
-              <span className="font-headline-sm text-headline-sm font-semibold">Partly Cloudy / Mild Marine Inversion</span>
+              <span className="font-headline-sm text-headline-sm font-semibold">{t('weather.partlyCloudy')}</span>
             </div>
             <p className="mt-space-xs font-body-sm text-body-sm text-on-surface-variant">
-              Stable boundary layer with high coastal stratus burning off slowly. Evaporative pressure ramping towards diurnal peak at 14:00 PST.
+              {t('weather.conditionsSummary')}
             </p>
           </div>
 
           <div className="mt-space-xl pt-space-md border-t border-outline-variant/30 grid grid-cols-3 gap-space-sm text-center">
             <div className="p-space-xs rounded-lg bg-surface-container-low">
-              <span className="block font-label-sm text-label-sm text-on-surface-variant">Delta-T Index</span>
-              <span className="block font-data-mono text-headline-sm text-primary font-semibold mt-0.5">3.8°C</span>
-              <span className="block font-label-sm text-[10px] text-secondary font-medium">Spray Favorable</span>
+              <span className="block font-label-sm text-label-sm text-on-surface-variant">{t('weather.deltaT')}</span>
+              <span className="block font-data-mono text-headline-sm text-primary font-semibold mt-0.5">{formatNumber(3.8, { maximumFractionDigits: 1 })}°C</span>
+              <span className="block font-label-sm text-[10px] text-secondary font-medium">{t('weather.sprayFavorable')}</span>
             </div>
             <div className="p-space-xs rounded-lg bg-surface-container-low">
-              <span className="block font-label-sm text-label-sm text-on-surface-variant">VPD Deficit</span>
-              <span className="block font-data-mono text-headline-sm text-primary font-semibold mt-0.5">1.12 kPa</span>
-              <span className="block font-label-sm text-[10px] text-on-surface-variant font-medium">Normal Stomatal</span>
+              <span className="block font-label-sm text-label-sm text-on-surface-variant">{t('weather.vpdDeficit')}</span>
+              <span className="block font-data-mono text-headline-sm text-primary font-semibold mt-0.5">{formatNumber(1.12, { maximumFractionDigits: 2 })} kPa</span>
+              <span className="block font-label-sm text-[10px] text-on-surface-variant font-medium">{t('weather.normalStomatal')}</span>
             </div>
             <div className="p-space-xs rounded-lg bg-surface-container-low">
-              <span className="block font-label-sm text-label-sm text-on-surface-variant">Leaf Moisture</span>
-              <span className="block font-data-mono text-headline-sm text-primary font-semibold mt-0.5">22%</span>
-              <span className="block font-label-sm text-[10px] text-secondary font-medium">Dry Foliage</span>
+              <span className="block font-label-sm text-label-sm text-on-surface-variant">{t('weather.leafMoisture')}</span>
+              <span className="block font-data-mono text-headline-sm text-primary font-semibold mt-0.5">{formatNumber(22)}%</span>
+              <span className="block font-label-sm text-[10px] text-secondary font-medium">{t('weather.dryFoliage')}</span>
             </div>
           </div>
         </div>
@@ -109,12 +117,12 @@ export const Weather: React.FC = () => {
           {/* Relative Humidity */}
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Relative Humidity</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.relativeHumidity')}</span>
               <span className="material-symbols-outlined text-secondary text-[20px]">humidity_percentage</span>
             </div>
             <div className="my-space-sm">
               <div className="flex items-baseline gap-1">
-                <span className="font-display-lg text-display-lg text-on-surface font-semibold">58</span>
+                <span className="font-display-lg text-display-lg text-on-surface font-semibold">{formatNumber(58)}</span>
                 <span className="font-headline-sm text-headline-sm text-on-surface-variant">%</span>
               </div>
               <div className="w-full bg-surface-container rounded-full h-1.5 mt-space-xs">
@@ -122,113 +130,113 @@ export const Weather: React.FC = () => {
               </div>
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Moderate transpiration potential across canopy.
+              {t('weather.transpirationPotential')}
             </span>
           </div>
 
           {/* Wind Vector */}
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Wind Vector</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.windVector')}</span>
               <span className="material-symbols-outlined text-secondary text-[20px]">air</span>
             </div>
             <div className="my-space-sm">
               <div className="flex items-baseline gap-2">
-                <span className="font-display-lg text-display-lg text-on-surface font-semibold">9.4</span>
+                <span className="font-display-lg text-display-lg text-on-surface font-semibold">{formatNumber(9.4, { maximumFractionDigits: 1 })}</span>
                 <span className="font-headline-sm text-headline-sm text-on-surface-variant">km/h</span>
                 <span className="px-1.5 py-0.5 rounded bg-surface-container text-on-surface font-label-sm text-label-sm font-semibold">
-                  NW
+                  {t('weather.northwest', 'NW')}
                 </span>
               </div>
               <span className="inline-block mt-space-xs text-secondary font-label-sm text-label-sm font-semibold">
-                ● Safe for foliar spraying (limit: 20 km/h)
+                ● {t('weather.safeForSpraying')}
               </span>
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Gusts damped by western hedgerow strip.
+              {t('weather.gustsDamped')}
             </span>
           </div>
 
           {/* Solar Irradiance */}
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Solar Irradiance</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.solarIrradiance')}</span>
               <span className="material-symbols-outlined text-secondary text-[20px]">wb_sunny</span>
             </div>
             <div className="my-space-sm">
               <div className="flex items-baseline gap-1">
-                <span className="font-display-lg text-display-lg text-on-surface font-semibold">720</span>
+                <span className="font-display-lg text-display-lg text-on-surface font-semibold">{formatNumber(720)}</span>
                 <span className="font-headline-sm text-headline-sm text-on-surface-variant">W/m²</span>
               </div>
               <div className="flex items-center gap-1.5 mt-space-xs">
                 <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-label-sm text-label-sm font-semibold">
-                  UV: 6 High
+                  {t('weather.uvHigh')}
                 </span>
               </div>
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Max PAR accumulation: 41.2 mol/m²/day.
+              {t('weather.maxPar')}
             </span>
           </div>
 
           {/* Evapotranspiration (ETo) */}
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Evapotranspiration (ETo)</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.evapotranspiration')}</span>
               <span className="material-symbols-outlined text-secondary text-[20px]">water_drop</span>
             </div>
             <div className="my-space-sm">
               <div className="flex items-baseline gap-1">
-                <span className="font-display-lg text-display-lg text-on-surface font-semibold">4.2</span>
+                <span className="font-display-lg text-display-lg text-on-surface font-semibold">{formatNumber(4.2, { maximumFractionDigits: 1 })}</span>
                 <span className="font-headline-sm text-headline-sm text-on-surface-variant">mm/day</span>
               </div>
               <span className="inline-block mt-space-xs text-on-surface-variant font-label-sm text-label-sm">
-                Standard Penman-Monteith calibration
+                {t('weather.penmanMonteith')}
               </span>
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Transpiration baseline for root depth zone 1.
+              {t('weather.rootZoneBaseline')}
             </span>
           </div>
 
           {/* Barometric Pressure */}
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Barometric Pressure</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.barometricPressure')}</span>
               <span className="material-symbols-outlined text-secondary text-[20px]">compress</span>
             </div>
             <div className="my-space-sm">
               <div className="flex items-baseline gap-1">
-                <span className="font-display-lg text-display-lg text-on-surface font-semibold">1014.8</span>
+                <span className="font-display-lg text-display-lg text-on-surface font-semibold">{formatNumber(1014.8, { maximumFractionDigits: 1 })}</span>
                 <span className="font-headline-sm text-headline-sm text-on-surface-variant">hPa</span>
               </div>
               <div className="flex items-center gap-1 text-secondary font-label-sm text-label-sm mt-space-xs font-semibold">
                 <span className="material-symbols-outlined text-[14px]">trending_flat</span>
-                <span>Barometer Steady (±0.2 hPa/3h)</span>
+                <span>{t('weather.barometerSteady')}</span>
               </div>
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              No frontal disruption within 36 hours.
+              {t('weather.noFrontalDisruption')}
             </span>
           </div>
 
           {/* Precipitation (24h) */}
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
-              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">Precipitation (24h)</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant uppercase">{t('weather.precipitation24h')}</span>
               <span className="material-symbols-outlined text-secondary text-[20px]">rainy</span>
             </div>
             <div className="my-space-sm">
               <div className="flex items-baseline gap-1">
-                <span className="font-display-lg text-display-lg text-on-surface font-semibold">0.0</span>
+                <span className="font-display-lg text-display-lg text-on-surface font-semibold">{formatNumber(0, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
                 <span className="font-headline-sm text-headline-sm text-on-surface-variant">mm</span>
               </div>
               <span className="inline-block mt-space-xs text-on-surface-variant font-label-sm text-label-sm">
-                Dew point: <strong className="text-on-surface">13.5°C</strong>
+                {t('weather.dewPoint', { value: `${formatNumber(13.5, { maximumFractionDigits: 1 })}°C` })}
               </span>
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant">
-              Zero rain accumulation over previous cycle.
+              {t('weather.noRain')}
             </span>
           </div>
         </div>
@@ -238,20 +246,20 @@ export const Weather: React.FC = () => {
       <div className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm space-y-space-lg">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm border-b border-outline-variant/30 pb-space-md">
           <div>
-            <span className="font-label-sm text-label-sm text-secondary uppercase font-semibold">Agronomic Horizon</span>
-            <h2 className="font-headline-md text-headline-md text-on-surface">7-Day Agricultural Forecast & Rain Probabilities</h2>
+            <span className="font-label-sm text-label-sm text-secondary uppercase font-semibold">{t('weather.agronomicHorizon')}</span>
+            <h2 className="font-headline-md text-headline-md text-on-surface">{t('weather.forecastTitle')}</h2>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-space-sm">
           {[
-            { day: 'Today', icon: 'partly_cloudy_day', high: 23, low: 14, desc: 'Partly Cloudy', rain: '0 mm', prob: '10%' },
-            { day: 'Tue', icon: 'wb_sunny', high: 25, low: 15, desc: 'Sunny', rain: '0 mm', prob: '5%' },
-            { day: 'Wed', icon: 'wb_sunny', high: 26, low: 16, desc: 'Clear Peak', rain: '0 mm', prob: '0%' },
-            { day: 'Thu', icon: 'partly_cloudy_day', high: 22, low: 13, desc: 'Coastal Fog', rain: '0 mm', prob: '15%' },
-            { day: 'Fri', icon: 'cloud', high: 20, low: 12, desc: 'Overcast', rain: '1.2 mm', prob: '40%' },
-            { day: 'Sat', icon: 'rainy', high: 19, low: 11, desc: 'Light Showers', rain: '4.5 mm', prob: '75%' },
-            { day: 'Sun', icon: 'partly_cloudy_day', high: 21, low: 13, desc: 'Clearing', rain: '0.2 mm', prob: '20%' },
+            { day: 0, icon: 'partly_cloudy_day', high: 23, low: 14, desc: 'Partly Cloudy', rain: 0, prob: 10 },
+            { day: 1, icon: 'wb_sunny', high: 25, low: 15, desc: 'Sunny', rain: 0, prob: 5 },
+            { day: 2, icon: 'wb_sunny', high: 26, low: 16, desc: 'Clear Peak', rain: 0, prob: 0 },
+            { day: 3, icon: 'partly_cloudy_day', high: 22, low: 13, desc: 'Coastal Fog', rain: 0, prob: 15 },
+            { day: 4, icon: 'cloud', high: 20, low: 12, desc: 'Overcast', rain: 1.2, prob: 40 },
+            { day: 5, icon: 'rainy', high: 19, low: 11, desc: 'Light Showers', rain: 4.5, prob: 75 },
+            { day: 6, icon: 'partly_cloudy_day', high: 21, low: 13, desc: 'Clearing', rain: 0.2, prob: 20 },
           ].map((item, idx) => (
             <div
               key={idx}
@@ -260,23 +268,23 @@ export const Weather: React.FC = () => {
               }`}
             >
               <div className="text-center">
-                <span className="font-label-sm text-label-sm text-secondary font-semibold uppercase">{item.day}</span>
+                <span className="font-label-sm text-label-sm text-secondary font-semibold uppercase">{getForecastDay(item.day)}</span>
                 <div className="mt-1 flex justify-center text-secondary">
                   <span className="material-symbols-outlined text-[28px]">{item.icon}</span>
                 </div>
                 <div className="mt-1 font-headline-sm text-headline-sm text-on-surface">
-                  {item.high}° <span className="text-on-surface-variant font-normal">/ {item.low}°</span>
+                  {formatNumber(item.high)}° <span className="text-on-surface-variant font-normal">/ {formatNumber(item.low)}°</span>
                 </div>
-                <span className="font-label-sm text-[11px] text-on-surface-variant block mt-0.5 truncate">{item.desc}</span>
+                <span className="font-label-sm text-[11px] text-on-surface-variant block mt-0.5 truncate">{translateEnum('weather.conditions', item.desc, item.desc)}</span>
               </div>
               <div className="mt-space-md space-y-space-xs font-data-mono text-[11px]">
                 <div className="flex justify-between text-on-surface-variant">
-                  <span>Rain:</span>
-                  <span className="font-semibold text-on-surface">{item.rain}</span>
+                  <span>{t('weather.rain')}</span>
+                  <span className="font-semibold text-on-surface">{formatNumber(item.rain, { maximumFractionDigits: 1 })} mm</span>
                 </div>
                 <div className="flex justify-between items-center text-on-surface-variant pt-1">
-                  <span className="flex items-center gap-0.5">Prob:</span>
-                  <span className="text-secondary font-semibold">{item.prob}</span>
+                  <span className="flex items-center gap-0.5">{t('weather.probability')}</span>
+                  <span className="text-secondary font-semibold">{formatNumber(item.prob)}%</span>
                 </div>
               </div>
             </div>

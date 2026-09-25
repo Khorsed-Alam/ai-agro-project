@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { firestoreService } from '../services/firebase';
 import { ECOSYSTEM_UPDATED_EVENT } from '../services/ecosystem';
+import { useI18n } from '../i18n';
 
 interface AuditLog {
   id: string;
@@ -18,10 +19,27 @@ interface AuditLog {
 }
 
 export const History: React.FC = () => {
+  const { t, translateEnum, formatDate, formatNumber } = useI18n();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<AuditLog | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const translateCategory = (category: AuditLog['category']) => {
+    if (category === 'AI Model') return t('history.categories.aiModel');
+    if (category === 'Field') return t('history.categories.field', 'Field');
+    return translateEnum('history.categories', category, category);
+  };
+
+  const formatTimestamp = (value: string) => formatDate(value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }) || t('history.recently');
+
+  const getField = (field: string) => field || t('history.generalSector');
+  const getDescription = (description: string) => description || t('history.systemEvent');
+  const getEngine = (engine: string) => engine || t('history.firestoreAuditPipeline', 'Firestore Audit Pipeline');
+  const getOperator = (operator: string) => operator || translateEnum('common.enums.roles', 'systemOperator');
 
   const loadAuditLogs = async () => {
     try {
@@ -39,15 +57,15 @@ export const History: React.FC = () => {
       if (dbLogs.length > 0) {
         const mapped: AuditLog[] = dbLogs.map((l: any, idx: number) => ({
           id: l.id || `rec-${1050 + idx}`,
-          timestamp: l.timestamp || 'Recently',
+          timestamp: l.timestamp || '',
           utcTime: l.utcTime || new Date().toISOString(),
           category: (l.category || 'Telemetry') as any,
-          field: l.field || 'General Farm Sector',
-          description: l.description || l.message || 'System log event recorded',
-          subDetail: l.subDetail || `Engine: ${l.engine || 'System Core'}`,
-          engine: l.engine || 'Firestore Audit Pipeline',
+          field: l.field || '',
+          description: l.description || l.message || '',
+          subDetail: l.subDetail || '',
+          engine: l.engine || '',
           status: (l.status || 'Success') as any,
-          operator: l.operator || l.userId || 'System Operator',
+          operator: l.operator || l.userId || '',
           hash: l.hash || `0x${Math.random().toString(16).substring(2, 10)}...${Math.random().toString(16).substring(2, 6)}`
         }));
 
@@ -89,28 +107,28 @@ export const History: React.FC = () => {
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-space-xs text-secondary font-label-sm uppercase tracking-wider mb-1">
               <span className="material-symbols-outlined text-[16px]">receipt_long</span>
-              <span>Immutable System Audit Trail</span>
+              <span>{t('history.immutableTrail')}</span>
               <span className="text-outline-variant">•</span>
-              <span className="text-on-surface-variant font-data-mono">ISO-22000 & GAP Compliant</span>
+              <span className="text-on-surface-variant font-data-mono">{t('history.compliant')}</span>
               <span className="ml-2 px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant text-[10px]">
-                Live Audit Ledger
+                {t('history.liveLedger')}
               </span>
             </div>
             <h1 className="font-headline-lg text-headline-lg text-on-surface font-semibold tracking-tight">
-              Farm Operations & Audit History
+              {t('history.title')}
             </h1>
             <p className="font-body-md text-body-md text-on-surface-variant mt-1 max-w-4xl">
-              Chronological ledger of automated AI dispatches, manual scout inspections, disease detections, and sensor telemetry events.
+              {t('history.description')}
             </p>
           </div>
           <div className="flex items-center gap-space-sm shrink-0 flex-wrap">
             <button className="inline-flex items-center gap-space-xs px-space-md py-space-xs bg-surface-container-lowest text-on-surface font-label-md rounded-lg shadow-sm hover:bg-surface-container transition-colors">
               <span className="material-symbols-outlined text-[18px] text-outline">tune</span>
-              <span>Filter Presets</span>
+              <span>{t('history.filterPresets')}</span>
             </button>
             <button className="inline-flex items-center gap-space-xs px-space-md py-space-xs bg-primary text-on-primary font-label-md rounded-lg shadow-sm hover:bg-primary-container transition-colors">
               <span className="material-symbols-outlined text-[18px]">download</span>
-              <span>Export Audit Log (CSV / JSON)</span>
+              <span>{t('history.exportLog')}</span>
             </button>
           </div>
         </div>
@@ -123,11 +141,11 @@ export const History: React.FC = () => {
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start justify-between">
             <div className="flex flex-col">
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
-                7-Day Log Volume
+                {t('history.logVolume')}
               </span>
-              <span className="font-headline-lg text-headline-lg text-on-surface font-semibold mt-1">1,428</span>
+              <span className="font-headline-lg text-headline-lg text-on-surface font-semibold mt-1">{formatNumber(1428)}</span>
               <span className="font-label-sm text-label-sm text-secondary flex items-center gap-1 mt-0.5">
-                <span className="material-symbols-outlined text-[14px]">trending_up</span> +8.4% telemetry rate
+                <span className="material-symbols-outlined text-[14px]">trending_up</span> {t('history.telemetryRate', { value: formatNumber(8.4, { maximumFractionDigits: 1 }) })}
               </span>
             </div>
             <div className="p-space-xs rounded-lg bg-surface-container text-secondary">
@@ -138,10 +156,10 @@ export const History: React.FC = () => {
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start justify-between">
             <div className="flex flex-col">
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
-                Autonomous Actions
+                {t('history.autonomousActions')}
               </span>
-              <span className="font-headline-lg text-headline-lg text-on-surface font-semibold mt-1">312 Cycles</span>
-              <span className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">99.1% execution fidelity</span>
+              <span className="font-headline-lg text-headline-lg text-on-surface font-semibold mt-1">{t('history.cycles', '{count} Cycles', { count: formatNumber(312) })}</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">{t('history.executionFidelity', { value: formatNumber(99.1, { maximumFractionDigits: 1 }) })}</span>
             </div>
             <div className="p-space-xs rounded-lg bg-secondary-container text-on-secondary-container">
               <span className="material-symbols-outlined text-[20px]">precision_manufacturing</span>
@@ -151,10 +169,10 @@ export const History: React.FC = () => {
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start justify-between">
             <div className="flex flex-col">
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
-                Flagged Interventions
+                {t('history.flaggedInterventions')}
               </span>
-              <span className="font-headline-lg text-headline-lg text-error font-semibold mt-1">14</span>
-              <span className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">3 active spore vectors</span>
+              <span className="font-headline-lg text-headline-lg text-error font-semibold mt-1">{formatNumber(14)}</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant mt-0.5">{t('history.activeSporeVectors', { count: formatNumber(3) })}</span>
             </div>
             <div className="p-space-xs rounded-lg bg-error-container text-on-error-container">
               <span className="material-symbols-outlined text-[20px]">flag</span>
@@ -164,10 +182,10 @@ export const History: React.FC = () => {
           <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-start justify-between">
             <div className="flex flex-col">
               <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">
-                Mean Ingestion Latency
+                {t('history.ingestionLatency')}
               </span>
-              <span className="font-headline-lg text-headline-lg text-on-surface font-semibold mt-1">18.4 ms</span>
-              <span className="font-label-sm text-label-sm text-secondary mt-0.5">Edge Broker (MQTT/CoAP)</span>
+              <span className="font-headline-lg text-headline-lg text-on-surface font-semibold mt-1">{formatNumber(18.4, { maximumFractionDigits: 1 })} ms</span>
+              <span className="font-label-sm text-label-sm text-secondary mt-0.5">{t('history.edgeBroker')}</span>
             </div>
             <div className="p-space-xs rounded-lg bg-surface-container text-on-surface-variant">
               <span className="material-symbols-outlined text-[20px]">speed</span>
@@ -181,7 +199,7 @@ export const History: React.FC = () => {
             {/* Event Category */}
             <div className="flex flex-col gap-1">
               <label className="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wider">
-                Event Category
+                {t('history.eventCategory')}
               </label>
               <div className="relative flex items-center">
                 <span className="material-symbols-outlined absolute left-2.5 text-on-surface-variant text-[18px] pointer-events-none">
@@ -192,12 +210,12 @@ export const History: React.FC = () => {
                   onChange={(e) => setCategoryFilter(e.target.value)}
                   className="w-full h-9 pl-8 pr-7 bg-surface-container-low text-on-surface font-body-sm text-body-sm rounded-lg appearance-none cursor-pointer focus:outline-none focus:bg-surface-container"
                 >
-                  <option value="All">All Categories</option>
-                  <option value="Irrigation">Irrigation Dispatch</option>
-                  <option value="Disease">Disease Detection</option>
-                  <option value="AI Model">AI Search & Model</option>
-                  <option value="Telemetry">Telemetry Sensor</option>
-                  <option value="Manual Override">Manual Override</option>
+                  <option value="All">{t('history.categories.all')}</option>
+                  <option value="Irrigation">{t('history.categories.irrigation')}</option>
+                  <option value="Disease">{t('history.categories.disease')}</option>
+                  <option value="AI Model">{t('history.categories.aiModel')}</option>
+                  <option value="Telemetry">{t('history.categories.telemetry')}</option>
+                  <option value="Manual Override">{t('history.categories.manualOverride')}</option>
                 </select>
                 <span className="material-symbols-outlined absolute right-2 text-on-surface-variant text-[16px] pointer-events-none">
                   expand_more
@@ -208,7 +226,7 @@ export const History: React.FC = () => {
             {/* Direct Search */}
             <div className="flex flex-col gap-1 xl:col-span-3">
               <label className="font-label-sm text-label-sm text-on-surface-variant font-semibold uppercase tracking-wider">
-                Direct Search
+                {t('history.directSearch')}
               </label>
               <div className="relative flex items-center">
                 <span className="material-symbols-outlined absolute left-2.5 text-on-surface-variant text-[18px]">
@@ -218,7 +236,7 @@ export const History: React.FC = () => {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Filter by field, description, algorithm name..."
+                  placeholder={t('history.searchPlaceholder')}
                   className="w-full h-9 pl-8 pr-3 bg-surface-container-low text-on-surface font-body-sm text-body-sm rounded-lg placeholder:text-on-surface-variant focus:outline-none focus:bg-surface-container"
                 />
               </div>
@@ -233,23 +251,23 @@ export const History: React.FC = () => {
             <div className="px-space-md py-space-sm bg-surface-container-low flex items-center justify-between">
               <div className="flex items-center gap-space-xs">
                 <span className="material-symbols-outlined text-[18px] text-on-surface">view_headline</span>
-                <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">Ledger Stream</h2>
+                <h2 className="font-headline-sm text-headline-sm text-on-surface font-semibold">{t('history.ledgerStream')}</h2>
               </div>
               <div className="flex items-center gap-space-xs">
                 <span className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-                <span className="font-data-mono text-label-sm text-on-surface-variant uppercase">Stream Synchronized</span>
+                <span className="font-data-mono text-label-sm text-on-surface-variant uppercase">{t('history.streamSynchronized')}</span>
               </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left font-body-sm text-body-sm border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low text-on-surface-variant font-label-sm uppercase tracking-wider border-b border-outline-variant/30">
-                    <th className="py-space-xs px-space-md font-semibold">Timestamp</th>
-                    <th className="py-space-xs px-space-sm font-semibold">Category</th>
-                    <th className="py-space-xs px-space-sm font-semibold">Field / Asset</th>
-                    <th className="py-space-xs px-space-md font-semibold">Event Description</th>
-                    <th className="py-space-xs px-space-sm font-semibold">Engine</th>
-                    <th className="py-space-xs px-space-sm font-semibold text-center">State</th>
+                      <th className="py-space-xs px-space-md font-semibold">{t('history.timestamp')}</th>
+                      <th className="py-space-xs px-space-sm font-semibold">{t('history.category')}</th>
+                      <th className="py-space-xs px-space-sm font-semibold">{t('history.fieldAsset')}</th>
+                      <th className="py-space-xs px-space-md font-semibold">{t('history.eventDescription')}</th>
+                      <th className="py-space-xs px-space-sm font-semibold">{t('history.engine')}</th>
+                      <th className="py-space-xs px-space-sm font-semibold text-center">{t('history.state')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-surface-container-low text-on-surface">
@@ -262,24 +280,26 @@ export const History: React.FC = () => {
                       }`}
                     >
                       <td className="py-space-sm px-space-md font-data-mono whitespace-nowrap text-on-surface-variant">
-                        <span className="font-semibold text-on-surface block">{log.timestamp}</span>
-                        <span className="text-[11px] text-outline">{log.utcTime}</span>
+                        <span className="font-semibold text-on-surface block">{formatTimestamp(log.timestamp)}</span>
+                        <span className="text-[11px] text-outline">{formatDate(log.utcTime, { timeStyle: 'medium', timeZone: 'UTC' })}</span>
                       </td>
                       <td className="py-space-sm px-space-sm whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container text-primary font-label-sm">
                           <span className="material-symbols-outlined text-[13px] text-secondary">
                             {log.category === 'Irrigation' ? 'water_drop' : log.category === 'Disease' ? 'coronavirus' : 'memory'}
                           </span>
-                          {log.category}
+                          {translateCategory(log.category)}
                         </span>
                       </td>
-                      <td className="py-space-sm px-space-sm whitespace-nowrap font-medium">{log.field}</td>
+                      <td className="py-space-sm px-space-sm whitespace-nowrap font-medium">{getField(log.field)}</td>
                       <td className="py-space-sm px-space-md max-w-xs">
-                        <p className="truncate font-body-sm text-body-sm text-on-surface font-medium">{log.description}</p>
-                        <p className="truncate font-data-mono text-[11px] text-on-surface-variant">{log.subDetail}</p>
+                        <p className="truncate font-body-sm text-body-sm text-on-surface font-medium">{getDescription(log.description)}</p>
+                        <p className="truncate font-data-mono text-[11px] text-on-surface-variant">
+                          {log.subDetail || `${t('history.engine')}: ${log.engine || t('history.systemCore', 'System Core')}`}
+                        </p>
                       </td>
                       <td className="py-space-sm px-space-sm whitespace-nowrap">
-                        <span className="font-data-mono text-label-sm text-on-surface">{log.engine}</span>
+                        <span className="font-data-mono text-label-sm text-on-surface">{getEngine(log.engine)}</span>
                       </td>
                       <td className="py-space-sm px-space-sm whitespace-nowrap text-center">
                         <span
@@ -291,7 +311,7 @@ export const History: React.FC = () => {
                               : 'bg-surface-container text-on-surface'
                           }`}
                         >
-                          {log.status}
+                          {translateEnum('status', log.status, log.status)}
                         </span>
                       </td>
                     </tr>
@@ -308,44 +328,44 @@ export const History: React.FC = () => {
                 <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/30">
                   <div className="flex items-center gap-space-xs">
                     <span className="material-symbols-outlined text-secondary text-[20px]">find_in_page</span>
-                    <h3 className="font-headline-sm text-headline-sm text-primary">Audit Inspector</h3>
+                    <h3 className="font-headline-sm text-headline-sm text-primary">{t('history.auditInspector')}</h3>
                   </div>
                   <span className="font-data-mono text-label-sm bg-surface-container px-2 py-0.5 rounded text-on-surface">
-                    ID: {selectedRecord.id}
+                    {t('history.recordId', 'ID: {id}', { id: selectedRecord.id })}
                   </span>
                 </div>
 
                 <div className="space-y-space-sm text-body-sm text-on-surface">
                   <div>
                     <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">
-                      Target Asset / Location
+                      {t('history.targetAsset')}
                     </span>
-                    <span className="font-headline-sm text-headline-sm text-primary">{selectedRecord.field}</span>
+                    <span className="font-headline-sm text-headline-sm text-primary">{getField(selectedRecord.field)}</span>
                   </div>
 
                   <div>
                     <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">
-                      Primary Dispatch Description
+                      {t('history.dispatchDescription')}
                     </span>
                     <p className="p-space-xs bg-surface-container-low rounded text-on-surface mt-0.5">
-                      {selectedRecord.description}
+                      {getDescription(selectedRecord.description)}
                     </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-space-xs text-data-mono">
                     <div className="bg-surface-container p-space-xs rounded">
-                      <span className="text-on-surface-variant text-[11px] block">ENGINE</span>
-                      <span className="font-semibold text-primary">{selectedRecord.engine}</span>
+                      <span className="text-on-surface-variant text-[11px] block">{t('history.engine').toUpperCase()}</span>
+                      <span className="font-semibold text-primary">{getEngine(selectedRecord.engine)}</span>
                     </div>
                     <div className="bg-surface-container p-space-xs rounded">
-                      <span className="text-on-surface-variant text-[11px] block">OPERATOR</span>
-                      <span className="font-semibold text-primary">{selectedRecord.operator}</span>
+                      <span className="text-on-surface-variant text-[11px] block">{t('history.operator').toUpperCase()}</span>
+                      <span className="font-semibold text-primary">{getOperator(selectedRecord.operator)}</span>
                     </div>
                   </div>
 
                   <div>
                     <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block">
-                      SHA-256 Audit Verification Hash
+                      {t('history.verificationHash')}
                     </span>
                     <span className="font-data-mono text-[11px] bg-primary-container text-on-primary p-space-xs rounded block truncate">
                       {selectedRecord.hash}
@@ -356,13 +376,13 @@ export const History: React.FC = () => {
                 <div className="pt-space-sm border-t border-outline-variant/30">
                   <span className="font-label-sm text-label-sm text-secondary font-semibold flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">verified</span>
-                    Cryptographically Sealed Log Record
+                    {t('history.sealedRecord')}
                   </span>
                 </div>
               </>
             ) : (
               <p className="text-on-surface-variant text-body-sm italic text-center py-space-lg">
-                Select a log row from the table to inspect details.
+                {t('history.selectRecord')}
               </p>
             )}
           </div>

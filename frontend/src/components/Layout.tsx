@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Navigation } from './Navigation';
+import { PreferenceControls } from './PreferenceControls';
 import { apiService } from '../services/api';
 import type { HealthResponse } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
 import { ECOSYSTEM_UPDATED_EVENT, getFarms } from '../services/ecosystem';
 
 export const Layout: React.FC = () => {
@@ -12,6 +14,7 @@ export const Layout: React.FC = () => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { userProfile, userRole, logout } = useAuth();
+  const { t, translateEnum } = useI18n();
 
   const [farmName, setFarmName] = useState('Green Valley Farm');
   const [farmLocation, setFarmLocation] = useState('Sector 4 — Salinas Valley, CA');
@@ -32,18 +35,14 @@ export const Layout: React.FC = () => {
     return () => window.removeEventListener(ECOSYSTEM_UPDATED_EVENT, loadFarmHeader);
   }, []);
 
-  // Close mobile nav on resize to desktop
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth >= 1024) {
-        setMobileNavOpen(false);
-      }
+      if (window.innerWidth >= 1024) setMobileNavOpen(false);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Close user menu on outside click
   useEffect(() => {
     if (!userMenuOpen) return;
     const close = () => setUserMenuOpen(false);
@@ -56,7 +55,7 @@ export const Layout: React.FC = () => {
     navigate('/login', { replace: true });
   };
 
-  const displayName = userProfile?.fullName || 'Farm Operator';
+  const displayName = userProfile?.fullName || t('common.enums.roles.farmOperator');
   const initials = displayName
     .split(' ')
     .map((n: string) => n[0])
@@ -66,95 +65,79 @@ export const Layout: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-surface text-on-surface font-body-md">
-      {/* Sidebar */}
       <Navigation
         health={backendHealth}
         mobileOpen={mobileNavOpen}
         onMobileClose={() => setMobileNavOpen(false)}
       />
 
-      {/* Main Content Area */}
-      <div className="flex flex-col min-h-screen w-full" style={{ paddingLeft: '240px' }}>
-        {/* Top Header */}
+      <div className="flex flex-col min-h-screen w-full lg:pl-60-sidebar">
         <header
-          className="fixed top-0 right-0 h-16 bg-surface-container-lowest z-40 flex items-center justify-between px-margin"
+          className="fixed top-0 right-0 h-16 bg-surface-container-lowest z-40 flex items-center justify-between px-margin left-0 lg:left-[240px]"
           style={{
-            left: '240px',
-            borderBottom: '1px solid rgba(193,200,194,0.4)',
-            boxShadow: '0 1px 8px rgba(0,0,0,0.04)',
+            borderBottom: '1px solid var(--app-outline-variant)',
+            boxShadow: 'var(--app-shadow)',
           }}
         >
-          {/* Left: Mobile hamburger + Farm name */}
           <div className="flex items-center gap-space-sm min-w-0">
             <button
               className="p-space-xs rounded-lg text-on-surface-variant lg:hidden"
               onClick={() => setMobileNavOpen(true)}
-              aria-label="Open navigation menu"
+              aria-label={t('accessibility.openNavigation')}
+              type="button"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>menu</span>
+              <span className="material-symbols-outlined" style={{ fontSize: '22px' }} aria-hidden="true">menu</span>
             </button>
 
-            {/* Farm name */}
-            <span className="material-symbols-outlined text-secondary shrink-0" style={{ fontSize: '20px' }}>
+            <span className="material-symbols-outlined text-secondary shrink-0" style={{ fontSize: '20px' }} aria-hidden="true">
               eco
             </span>
             <div className="flex items-center gap-space-xs truncate">
-              <span className="font-headline-sm text-on-surface font-semibold truncate">
-                {farmName}
-              </span>
-              <span className="text-outline font-label-md">•</span>
-              <span className="font-body-md text-on-surface-variant truncate hidden md:block">
-                {farmLocation}
-              </span>
+              <span className="font-headline-sm text-on-surface font-semibold truncate">{farmName}</span>
+              <span className="text-outline font-label-md" aria-hidden="true">•</span>
+              <span className="font-body-md text-on-surface-variant truncate hidden md:block">{farmLocation}</span>
             </div>
           </div>
 
-          {/* Right: Weather + Notifications + User */}
           <div className="flex items-center gap-gutter-lg shrink-0">
-            {/* Weather widget (desktop) */}
             <div
               className="hidden xl:flex items-center gap-space-xs bg-surface px-space-md py-space-xs rounded-lg text-on-surface-variant font-data-mono"
-              style={{ border: '1px solid rgba(193,200,194,0.3)' }}
+              style={{ border: '1px solid var(--app-outline-variant)' }}
             >
-              <span className="material-symbols-outlined text-secondary" style={{ fontSize: '18px' }}>
-                partly_cloudy_day
-              </span>
-              <span>22°C Clear</span>
-              <span className="text-outline-variant">|</span>
-              <span>Humidity 58%</span>
-              <span className="text-outline-variant">|</span>
-              <span>Wind 9 km/h NW</span>
+              <span className="material-symbols-outlined text-secondary" style={{ fontSize: '18px' }} aria-hidden="true">partly_cloudy_day</span>
+              <span>{t('layout.clearWeather')}</span>
+              <span className="text-outline-variant" aria-hidden="true">|</span>
+              <span>{t('layout.humidity', { value: '58' })}</span>
+              <span className="text-outline-variant" aria-hidden="true">|</span>
+              <span>{t('layout.wind', { speed: '9', direction: 'NW' })}</span>
             </div>
 
             <div className="flex items-center gap-space-md">
-              {/* Notification bell */}
+              <PreferenceControls compact />
+
               <button
                 className="relative p-space-xs rounded-lg text-on-surface-variant transition-colors"
-                aria-label="Notifications"
+                aria-label={t('accessibility.notifications')}
+                title={t('accessibility.notifications')}
                 type="button"
                 onClick={() => navigate('/history')}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>notifications</span>
-                <span className="absolute top-1 right-1 w-4 h-4 bg-error text-on-error rounded-full flex items-center justify-center font-label-sm">
-                  2
-                </span>
+                <span className="material-symbols-outlined" style={{ fontSize: '22px' }} aria-hidden="true">notifications</span>
+                <span className="absolute top-1 right-1 w-4 h-4 bg-error text-on-error rounded-full flex items-center justify-center font-label-sm">2</span>
               </button>
 
-              {/* Divider */}
-              <div className="h-6 w-px bg-outline-variant" style={{ opacity: 0.4 }} />
+              <div className="h-6 w-px bg-outline-variant" style={{ opacity: 0.4 }} aria-hidden="true" />
 
-              {/* User info + dropdown */}
               <div style={{ position: 'relative' }}>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setUserMenuOpen((o) => !o); }}
                   className="flex items-center gap-space-sm"
-                  aria-label="User menu"
+                  aria-label={t('accessibility.userMenu')}
                   aria-haspopup="true"
                   aria-expanded={userMenuOpen}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', borderRadius: '8px' }}
                 >
-                  {/* Avatar */}
                   <div
                     style={{
                       width: '32px',
@@ -164,19 +147,12 @@ export const Layout: React.FC = () => {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      border: '2px solid rgba(193,200,194,0.4)',
+                      border: '2px solid var(--app-outline-variant)',
                       flexShrink: 0,
                     }}
+                    aria-hidden="true"
                   >
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#fff',
-                        fontFamily: 'Inter, sans-serif',
-                        letterSpacing: '0.5px',
-                      }}
-                    >
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#fff', fontFamily: 'Inter, sans-serif', letterSpacing: '0.5px' }}>
                       {initials}
                     </span>
                   </div>
@@ -184,130 +160,76 @@ export const Layout: React.FC = () => {
                     <span className="font-label-md text-on-surface font-semibold leading-tight flex items-center gap-1.5">
                       {displayName}
                       <span className="px-1.5 py-0.2 rounded text-[10px] bg-primary-container text-on-primary font-bold uppercase">
-                        {userRole === 'farmer' ? 'Farmer' : 'Owner'}
+                        {translateEnum('common.enums.roles', userRole, userRole)}
                       </span>
                     </span>
                     <span className="font-label-sm text-on-surface-variant leading-tight">
-                      {backendHealth?.status === 'ok' ? 'System Online' : 'Demo Mode'}
+                      {backendHealth?.status === 'ok' ? t('layout.systemOnline') : t('layout.demoMode')}
                     </span>
                   </div>
-                  <span className="material-symbols-outlined text-on-surface-variant hidden md:block" style={{ fontSize: '18px' }}>
+                  <span className="material-symbols-outlined text-on-surface-variant hidden md:block" style={{ fontSize: '18px' }} aria-hidden="true">
                     {userMenuOpen ? 'expand_less' : 'expand_more'}
                   </span>
                 </button>
 
-                {/* Dropdown menu */}
                 {userMenuOpen && (
                   <div
                     onClick={(e) => e.stopPropagation()}
+                    className="bg-surface-container-lowest rounded-xl border shadow-lg"
                     style={{
                       position: 'absolute',
                       top: 'calc(100% + 8px)',
                       right: 0,
                       minWidth: '220px',
-                      background: '#fff',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(193,200,194,0.5)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.1)',
+                      borderColor: 'var(--app-outline-variant)',
                       zIndex: 100,
                       overflow: 'hidden',
-                      fontFamily: 'Inter, sans-serif',
+                      fontFamily: 'Inter, Noto Sans Bengali, sans-serif',
                     }}
                   >
-                    {/* User info header */}
-                    <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(193,200,194,0.4)', background: '#f8faf8' }}>
-                      <div className="flex items-center justify-between">
-                        <p style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#1a2e1a' }}>{displayName}</p>
+                    <div className="p-space-md" style={{ borderBottom: '1px solid var(--app-outline-variant)' }}>
+                      <div className="flex items-center justify-between gap-space-sm">
+                        <p className="m-0 text-sm font-semibold text-on-surface truncate">{displayName}</p>
                         <span className="px-2 py-0.5 rounded text-[10px] bg-primary-container text-on-primary font-bold uppercase">
-                          {userRole === 'farmer' ? 'Farmer' : 'Owner'}
+                          {translateEnum('common.enums.roles', userRole, userRole)}
                         </span>
                       </div>
-                      <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#6b7a6b' }}>
-                        {userProfile?.email || 'farmer@agroai.app'}
-                      </p>
+                      <p className="mt-0.5 text-xs text-on-surface-variant truncate">{userProfile?.email || 'farmer@agroai.app'}</p>
                     </div>
 
-                    {/* Menu items */}
-                    <div style={{ padding: '6px' }}>
+                    <div className="p-space-xs">
                       <button
                         type="button"
                         onClick={() => {
                           setUserMenuOpen(false);
                           navigate(userRole === 'farmer' ? '/farmer-dashboard' : '/owner-dashboard');
                         }}
-                        style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '9px 12px',
-                          background: 'none',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          color: '#2d6a4f',
-                          fontWeight: 600,
-                          textAlign: 'left',
-                        }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#f0fdf4'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                        className="w-full flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-left text-sm font-semibold text-primary hover:bg-surface-container"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#2d6a4f' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">
                           {userRole === 'farmer' ? 'assignment_turned_in' : 'admin_panel_settings'}
                         </span>
-                        Go to My Workspace
+                        {t('layout.goToMyWorkspace')}
                       </button>
 
                       <button
                         type="button"
                         onClick={() => { setUserMenuOpen(false); navigate('/settings'); }}
-                        style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '9px 12px',
-                          background: 'none',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          color: '#374537',
-                          textAlign: 'left',
-                        }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#f0fdf4'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                        className="w-full flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-left text-sm font-semibold text-on-surface hover:bg-surface-container"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#6b7a6b' }}>settings</span>
-                        Settings
+                        <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: '18px' }} aria-hidden="true">settings</span>
+                        {t('navigation.settings')}
                       </button>
 
-                      <div style={{ height: '1px', background: 'rgba(193,200,194,0.4)', margin: '4px 0' }} />
-
+                      <div className="h-px bg-outline-variant my-1" aria-hidden="true" />
                       <button
                         id="logout-btn"
                         type="button"
                         onClick={handleLogout}
-                        style={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          padding: '9px 12px',
-                          background: 'none',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '14px',
-                          color: '#dc2626',
-                          textAlign: 'left',
-                        }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#fef2f2'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'none'; }}
+                        className="w-full flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-left text-sm font-semibold text-error hover:bg-error-container"
                       >
-                        <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>logout</span>
-                        Sign out
+                        <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">logout</span>
+                        {t('layout.signOut')}
                       </button>
                     </div>
                   </div>
@@ -317,7 +239,6 @@ export const Layout: React.FC = () => {
           </div>
         </header>
 
-        {/* Page Content */}
         <main className="flex-1 pt-16 bg-surface min-h-screen">
           <Outlet />
         </main>

@@ -6,7 +6,7 @@ AgroAI is a comprehensive, explainable AI web application designed for modern pr
 
 ## Technical Stack
 
-* **Frontend**: React 18, TypeScript, Vite, Tailwind CSS (Stitch UI Design System)
+* **Frontend**: React 19, TypeScript, Vite, Tailwind CSS (Stitch UI Design System)
 * **Backend**: FastAPI (Python 3.14), Pydantic, Uvicorn
 * **Database & Auth**: GCP Cloud Firestore + Firebase Authentication (Modular SDK v12)
 * **Image Processing**: OpenCV (`cv2`) image decoding, 224x224 RGB resizing & normalization
@@ -48,7 +48,7 @@ AgroAI/
 │   ├── main.py            # FastAPI main entry point & REST API endpoints
 │   └── requirements.txt
 ├── docs/                  # System Architecture, AI Algorithms, API, and Firebase docs
-├── SKILL.md               # Mandatory project development contract
+├── Documentation/            # Project contract and development instructions
 ├── progress.md            # Implementation progress tracking
 └── README.md
 ```
@@ -60,7 +60,7 @@ AgroAI/
 ### 1. Start FastAPI Backend
 
 ```powershell
-cd d:\AgroAI\backend
+cd E:\ai-agro-project\backend
 python -m pip install -r requirements.txt
 python main.py
 ```
@@ -69,15 +69,21 @@ python main.py
 ### 2. Start React Frontend
 
 ```powershell
-cd d:\AgroAI\frontend
+cd E:\ai-agro-project\frontend
 npm install
 npm run dev
 ```
-> Web UI runs on `http://localhost:5173`
+> Web UI runs on `http://localhost:3000`
 
 ---
 
----
+## Language and Theme Support
+
+AgroAI supports English (`en`) and Bangla (`bn`) through a centralized frontend i18n provider. The selected language is stored in `localStorage` under `agroai-language` and is applied across routes without reloading the application.
+
+Light (`light`) and dark (`dark`) themes use the existing agricultural design tokens with a forest-and-slate dark palette. The selected theme is stored under `agroai-theme` and is applied before the first React render. Global controls are available in the authenticated header, public authentication pages, and the Settings appearance section.
+
+Locale resources live in `frontend/src/i18n/`, and theme state lives in `frontend/src/theme/ThemeContext.tsx`. Backend API contracts, Firestore collections, machine values, and algorithm identifiers remain unchanged; only application-controlled display text and presentation styles are localized/themed.
 
 ---
 
@@ -121,7 +127,7 @@ AgroAI provides a role-based agricultural management system supporting two main 
 * `/algorithms` — Educational lab covering BFS, DFS, A*, AC-3, K-Means, Decision Tree, CNN, CSP.
 * `/resources` — Sensor fleet registry, IoT probes, pump controllers, LoRaWAN gateway.
 * `/history` — Immutable audit stream, search/filters, SHA-256 sealed record inspector.
-* `/settings` — Enterprise configuration dock, Farm Info form, AI preference toggles, Firebase health ping.
+* `/settings` — Enterprise configuration dock, Farm Info form, AI preference toggles, Firebase health ping, language and theme preferences.
 * `/irrigation-planner` — Water reservoir bento, 24h Gantt dispatch timeline, AC-3 math formulation card.
 * `/algorithms` — Educational lab covering BFS, DFS, A*, AC-3, K-Means, Decision Tree, CNN, CSP.
 * `/resources` — Sensor fleet registry, IoT probes, pump controllers, LoRaWAN gateway.

@@ -2,9 +2,13 @@ import React, { useState } from 'react';
 import { getFirebaseStatus } from '../services/firebase';
 import { apiService } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
+import { useTheme } from '../theme/ThemeContext';
 
 export const Settings: React.FC = () => {
   const { user, userProfile } = useAuth();
+  const { t, language, setLanguage, translateEnum } = useI18n();
+  const { theme, setTheme } = useTheme();
   const fbStatus = getFirebaseStatus();
   const [testingPing, setTestingPing] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
@@ -15,9 +19,9 @@ export const Settings: React.FC = () => {
     setPingResult(null);
     try {
       const res = await apiService.healthCheck();
-      setPingResult(`FastAPI connected (${res.status || 'OK'}) • Firebase: ${fbStatus.status}`);
+      setPingResult(`${t('settings.backendApi')}: ${res.status || 'OK'} • ${t('settings.firebaseProject')}: ${fbStatus.status}`);
     } catch {
-      setPingResult(`Firebase Status: ${fbStatus.status} • (FastAPI offline fallback active)`);
+      setPingResult(`${t('settings.firebaseProject')}: ${fbStatus.status} • ${t('errors.fastApiOffline')}`);
     } finally {
       setTestingPing(false);
     }
@@ -29,17 +33,17 @@ export const Settings: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-space-md">
         <div className="flex flex-col gap-space-xs">
           <div className="flex items-center gap-space-xs text-on-surface-variant font-label-sm text-label-sm uppercase tracking-wider">
-            <span>Enterprise Portal</span>
+            <span>{t('settings.enterprisePortal')}</span>
             <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span>System Administration</span>
+            <span>{t('settings.systemAdministration')}</span>
             <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-            <span className="text-secondary font-semibold">Settings</span>
+            <span className="text-secondary font-semibold">{t('navigation.settings')}</span>
           </div>
           <h1 className="font-display-lg text-display-lg text-on-surface tracking-tight">
-            Application & Farm Settings
+            {t('settings.title')}
           </h1>
           <p className="font-body-md text-body-md text-on-surface-variant max-w-3xl">
-            Configure farm profile, sensor integrations, automated AI engine parameters, and user preferences.
+            {t('settings.description')}
           </p>
         </div>
 
@@ -51,10 +55,10 @@ export const Settings: React.FC = () => {
           </span>
           <div className="flex flex-col">
             <span className="font-label-sm text-label-sm font-semibold text-on-surface">
-              FastAPI + Firebase Connection
+              {t('settings.connection')}
             </span>
             <span className="font-data-mono text-label-sm text-secondary">
-              Status: {fbStatus.status} • Project: {fbStatus.projectId}
+              {t('settings.statusProject', { status: fbStatus.status, project: fbStatus.projectId })}
             </span>
           </div>
           <span className="material-symbols-outlined text-secondary text-[18px] ml-space-xs">
@@ -68,7 +72,7 @@ export const Settings: React.FC = () => {
         {/* Left Navigation Dock */}
         <aside className="lg:col-span-3 sticky top-20 bg-surface-container-lowest rounded-xl p-space-sm shadow-sm flex flex-col gap-space-xs">
           <div className="px-space-md py-space-xs text-on-surface-variant font-label-sm text-label-sm uppercase tracking-wider font-semibold">
-            Configuration Categories
+            {t('settings.configurationCategories')}
           </div>
           <nav className="flex flex-col space-y-1 font-body-md text-body-md">
             <a
@@ -77,10 +81,10 @@ export const Settings: React.FC = () => {
             >
               <span className="flex items-center gap-space-sm">
                 <span className="material-symbols-outlined text-[20px]">agriculture</span>
-                <span>Farm Information</span>
+                {t('settings.farmInformation')}
               </span>
               <span className="text-label-sm font-semibold px-1.5 py-0.5 rounded bg-secondary text-on-primary">
-                Active
+                {t('status.active')}
               </span>
             </a>
             <a
@@ -88,7 +92,7 @@ export const Settings: React.FC = () => {
               className="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface hover:bg-surface-container transition-colors"
             >
               <span className="material-symbols-outlined text-[20px] text-secondary">psychology</span>
-              <span>AI Engine Preferences</span>
+              <span>              {t('settings.aiPreferences')}</span>
             </a>
             <a
               href="#data-firebase"
@@ -96,7 +100,7 @@ export const Settings: React.FC = () => {
             >
               <span className="flex items-center gap-space-sm">
                 <span className="material-symbols-outlined text-[20px] text-secondary">cloud_sync</span>
-                <span>Data & Firebase</span>
+                <span>{t('settings.dataFirebase')}</span>
               </span>
               <span className="w-2 h-2 rounded-full bg-secondary" />
             </a>
@@ -105,14 +109,14 @@ export const Settings: React.FC = () => {
               className="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface hover:bg-surface-container transition-colors"
             >
               <span className="material-symbols-outlined text-[20px] text-on-surface-variant">notifications_active</span>
-              <span>Notifications & Alerts</span>
+              <span>{t('settings.notificationsAlerts')}</span>
             </a>
             <a
               href="#appearance"
               className="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface hover:bg-surface-container transition-colors"
             >
               <span className="material-symbols-outlined text-[20px] text-on-surface-variant">tune</span>
-              <span>Agronomic Units</span>
+              <span>{t('settings.appearance')}</span>
             </a>
           </nav>
 
@@ -120,14 +124,14 @@ export const Settings: React.FC = () => {
           <div className="mt-space-lg bg-surface-container p-space-md rounded-lg flex flex-col gap-space-xs text-on-surface border border-outline-variant/30">
             <div className="flex items-center gap-space-xs text-primary font-headline-sm text-headline-sm font-semibold">
               <span className="material-symbols-outlined text-[18px]">account_circle</span>
-              <span>Authenticated Operator</span>
+              <span>{t('settings.authenticatedOperator')}</span>
             </div>
             <div className="flex flex-col gap-0.5 font-body-sm text-body-sm text-on-surface-variant">
               <p><strong className="text-on-surface">{userProfile?.fullName || user?.displayName || 'Farm Operator'}</strong></p>
               <p className="text-xs">{user?.email || 'Unauthenticated'}</p>
               <div className="mt-2 flex items-center justify-between text-xs">
                 <span className="px-2 py-0.5 rounded bg-primary-container text-on-primary font-medium capitalize">
-                  Role: {userProfile?.role || 'Farmer'}
+                  {t('settings.role', { role: translateEnum('common.enums.roles', userProfile?.role || 'farmer', userProfile?.role || 'Farmer') })}
                 </span>
                 <span className="font-data-mono text-[10px] text-on-surface-variant truncate max-w-[100px]">
                   UID: {user?.uid?.substring(0, 8)}...
@@ -139,28 +143,28 @@ export const Settings: React.FC = () => {
 
         {/* Main Form Sections Area */}
         <main className="lg:col-span-9 flex flex-col gap-space-xl">
-          {/* SECTION 1: Farm Information */}
+          {/* SECTION 1: {t('settings.farmInformation')} */}
           <section className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-space-lg" id="farm-info">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-space-md gap-space-sm border-b border-outline-variant/30">
               <div className="flex items-center gap-space-sm">
                 <span className="material-symbols-outlined text-secondary text-[24px]">potted_plant</span>
                 <div>
-                  <h2 className="font-headline-md text-headline-md text-on-surface">Farm Information</h2>
+                  <h2 className="font-headline-md text-headline-md text-on-surface">{t('settings.farmInformation')}</h2>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Primary geographical boundaries, parcel classifications, and regional parameters.
+                    {t('settings.farmInformationDescription')}
                   </p>
                 </div>
               </div>
               <span className="inline-flex items-center gap-1 font-label-sm text-label-sm bg-surface-container px-2.5 py-1 rounded-full text-secondary font-semibold">
-                <span className="material-symbols-outlined text-[14px]">pin_drop</span> GIS Anchor Verified
+                {t('settings.gisVerified')}
               </span>
             </div>
 
             <form className="grid grid-cols-1 md:grid-cols-2 gap-gutter-lg" onSubmit={(e) => e.preventDefault()}>
               <div className="flex flex-col gap-space-xs">
                 <label className="font-label-md text-label-md font-semibold text-on-surface flex items-center justify-between">
-                  <span>Farm Name</span>
-                  <span className="font-label-sm text-label-sm text-on-surface-variant">Enterprise ID: AG-841</span>
+                  <span>{t('settings.farmName')}</span>
+                  <span className="font-label-sm text-label-sm text-on-surface-variant">{t('settings.enterpriseId', { id: 'AG-841' })}</span>
                 </label>
                 <input
                   type="text"
@@ -171,7 +175,7 @@ export const Settings: React.FC = () => {
 
               <div className="flex flex-col gap-space-xs">
                 <label className="font-label-md text-label-md font-semibold text-on-surface">
-                  Operational Headquarters
+                  {t('settings.headquarters')}
                 </label>
                 <input
                   type="text"
@@ -182,8 +186,8 @@ export const Settings: React.FC = () => {
 
               <div className="flex flex-col gap-space-xs">
                 <label className="font-label-md text-label-md font-semibold text-on-surface flex items-center justify-between">
-                  <span>GPS Centroid Coordinates</span>
-                  <span className="font-data-mono text-label-sm text-secondary">WGS84 Datum</span>
+                  <span>{t('settings.gpsCoordinates')}</span>
+                  <span className="font-data-mono text-label-sm text-secondary">{t('settings.gpsDatum')}</span>
                 </label>
                 <div className="relative flex items-center">
                   <input
@@ -198,7 +202,7 @@ export const Settings: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-space-xs">
-                <label className="font-label-md text-label-md font-semibold text-on-surface">Total Managed Land Area</label>
+                <label className="font-label-md text-label-md font-semibold text-on-surface">{t('settings.totalLandArea')}</label>
                 <input
                   type="text"
                   defaultValue="420 Hectares / 1,038 Acres"
@@ -207,19 +211,19 @@ export const Settings: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-space-xs">
-                <label className="font-label-md text-label-md font-semibold text-on-surface">Default Soil Classification</label>
+                <label className="font-label-md text-label-md font-semibold text-on-surface">{t('settings.defaultSoil')}</label>
                 <select className="w-full bg-surface h-9 px-3 rounded-lg text-on-surface font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-primary shadow-sm">
-                  <option>Salinas Silty Clay Loam (Fine-Silty, Mixed)</option>
-                  <option>Chualar Sandy Loam</option>
-                  <option>Pacheco Silt Loam</option>
+                  <option>{t('settings.soilSalinas')}</option>
+                  <option>{t('settings.soilChualar')}</option>
+                  <option>{t('settings.soilPacheco')}</option>
                 </select>
               </div>
 
               <div className="flex flex-col gap-space-xs">
-                <label className="font-label-md text-label-md font-semibold text-on-surface">Current Growing Season</label>
+                <label className="font-label-md text-label-md font-semibold text-on-surface">{t('settings.growingSeason')}</label>
                 <select className="w-full bg-surface h-9 px-3 rounded-lg text-on-surface font-body-md text-body-md focus:outline-none focus:ring-2 focus:ring-primary shadow-sm">
-                  <option>Spring / Summer 2025 (Active Rotation)</option>
-                  <option>Fall Cover Crop 2025</option>
+                  <option>{t('settings.seasonSpring')}</option>
+                  <option>{t('settings.seasonFall')}</option>
                 </select>
               </div>
             </form>
@@ -227,14 +231,14 @@ export const Settings: React.FC = () => {
             <div className="flex items-center justify-between pt-space-md border-t border-outline-variant/30">
               <span className="font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1">
                 <span className="material-symbols-outlined text-[16px] text-secondary">check_circle</span>
-                All 14 field parcels synchronize coordinate geometry dynamically
+                {t('settings.parcelsSynchronized', { count: 14 })}
               </span>
               <button
                 type="button"
                 className="h-9 px-space-lg rounded-lg bg-primary text-on-primary font-headline-sm text-body-md hover:bg-primary-container transition-all flex items-center gap-space-xs shadow-sm cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">save</span>
-                <span>Save Farm Details</span>
+                {t('settings.saveFarm')}
               </button>
             </div>
           </section>
@@ -245,14 +249,14 @@ export const Settings: React.FC = () => {
               <div className="flex items-center gap-space-sm">
                 <span className="material-symbols-outlined text-secondary text-[24px]">model_training</span>
                 <div>
-                  <h2 className="font-headline-md text-headline-md text-on-surface">AI Engine & Algorithm Preferences</h2>
+                  <h2 className="font-headline-md text-headline-md text-on-surface">{t('settings.aiEngineTitle')}</h2>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Configure autonomous decision weights, mathematical transparency, and constraint solver thresholds.
+                    {t('settings.solverDescription')}
                   </p>
                 </div>
               </div>
               <span className="px-2.5 py-1 bg-secondary-container text-on-secondary-container rounded-full font-label-sm text-label-sm font-semibold">
-                AC-3 Solver Active
+                {t('settings.solverActive')}
               </span>
             </div>
 
@@ -262,14 +266,14 @@ export const Settings: React.FC = () => {
                 <div className="flex flex-col gap-1 max-w-2xl">
                   <div className="flex items-center gap-space-xs">
                     <span className="font-headline-sm text-headline-sm text-on-surface">
-                      Enable Automated Irrigation Recommendations (CSP + AC-3)
+                      {t('settings.automatedIrrigation')}
                     </span>
                     <span className="px-2 py-0.5 rounded bg-surface-container text-secondary font-label-sm text-label-sm font-semibold">
-                      Deterministic
+                      {t('settings.deterministic')}
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Automatically formulate feasible valve actuation schedules when root-zone matric potential drops below targeted threshold.
+                    {t('settings.automatedIrrigationDescription')}
                   </p>
                 </div>
                 <input type="checkbox" defaultChecked className="w-5 h-5 accent-[#296b3c] cursor-pointer mt-1" />
@@ -280,14 +284,14 @@ export const Settings: React.FC = () => {
                 <div className="flex flex-col gap-1 max-w-2xl">
                   <div className="flex items-center gap-space-xs">
                     <span className="font-headline-sm text-headline-sm text-on-surface">
-                      Show Algorithmic Transparency & Mathematical Formulations
+                      {t('settings.transparency')}
                     </span>
                     <span className="px-2 py-0.5 rounded bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-semibold">
-                      Explainability
+                      {t('settings.explainability')}
                     </span>
                   </div>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Display constraint satisfaction networks, dual graph representations, and Gini impurity indices.
+                    {t('settings.transparencyDescription')}
                   </p>
                 </div>
                 <input type="checkbox" defaultChecked className="w-5 h-5 accent-[#296b3c] cursor-pointer mt-1" />
@@ -298,10 +302,10 @@ export const Settings: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="font-headline-sm text-headline-sm text-on-surface">
-                      Minimum Diagnostic Confidence Cutoff
+                      {t('settings.confidenceCutoff')}
                     </span>
                     <p className="font-body-sm text-body-sm text-on-surface-variant">
-                      Predictions below this cutoff generate a human inspection prompt.
+                      {t('settings.confidenceDescription')}
                     </p>
                   </div>
                   <span className="font-data-mono text-headline-sm text-secondary bg-surface-container px-3 py-1 rounded-lg">
@@ -325,15 +329,15 @@ export const Settings: React.FC = () => {
             </div>
           </section>
 
-          {/* SECTION 3: Data & Firebase Status */}
+          {/* SECTION 3: {t('settings.dataFirebase')} Status */}
           <section className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-space-lg" id="data-firebase">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-space-md gap-space-sm border-b border-outline-variant/30">
               <div className="flex items-center gap-space-sm">
                 <span className="material-symbols-outlined text-secondary text-[24px]">database</span>
                 <div>
-                  <h2 className="font-headline-md text-headline-md text-on-surface">Data Services & Firebase Status</h2>
+                  <h2 className="font-headline-md text-headline-md text-on-surface">{t('settings.dataServices')}</h2>
                   <p className="font-body-sm text-body-sm text-on-surface-variant">
-                    Real-time edge telemetry bridge, cloud database sync, and protocol heartbeats.
+                    {t('settings.dataServicesDescription')}
                   </p>
                 </div>
               </div>
@@ -344,43 +348,43 @@ export const Settings: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
               <div className="bg-surface p-space-md rounded-xl flex flex-col justify-between gap-space-sm shadow-sm">
-                <span className="font-label-sm text-label-sm text-on-surface-variant">BACKEND API</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">{t('settings.backendApi')}</span>
                 <div>
-                  <span className="font-headline-sm text-headline-sm text-on-surface">FastAPI Python</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant">Port 8000 /api</p>
+                  <span className="font-headline-sm text-headline-sm text-on-surface">{t('settings.fastApiPython')}</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.backEndPort')}</p>
                 </div>
-                <span className="font-data-mono text-label-sm text-secondary font-semibold">Active</span>
+                <span className="font-data-mono text-label-sm text-secondary font-semibold">{t('status.active')}</span>
               </div>
 
               <div className="bg-surface p-space-md rounded-xl flex flex-col justify-between gap-space-sm shadow-sm">
-                <span className="font-label-sm text-label-sm text-on-surface-variant">FIREBASE PROJECT</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">{t('settings.firebaseProject')}</span>
                 <div>
                   <span className="font-headline-sm text-headline-sm text-on-surface truncate block">
                     {fbStatus.projectId}
                   </span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant">Auth + Firestore</p>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.authAndFirestore')}</p>
                 </div>
                 <span className="font-data-mono text-label-sm text-secondary font-semibold">
-                  {fbStatus.isConfigured ? 'Configured' : 'Env Pending'}
+                  {fbStatus.isConfigured ? t('settings.configured') : t('settings.envPending')}
                 </span>
               </div>
 
               <div className="bg-surface p-space-md rounded-xl flex flex-col justify-between gap-space-sm shadow-sm">
-                <span className="font-label-sm text-label-sm text-on-surface-variant">FIRESTORE SCHEMAS</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">{t('settings.firestoreSchemas')}</span>
                 <div>
-                  <span className="font-headline-sm text-headline-sm text-on-surface">11 Schemas</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant">Fields, Logs, Telemetry</p>
+                  <span className="font-headline-sm text-headline-sm text-on-surface">{t('common.items', { count: 11 })}</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.fieldsLogsTelemetry')}</p>
                 </div>
-                <span className="font-data-mono text-label-sm text-on-surface-variant">Documented</span>
+                <span className="font-data-mono text-label-sm text-on-surface-variant">{t('settings.documented')}</span>
               </div>
 
               <div className="bg-surface p-space-md rounded-xl flex flex-col justify-between gap-space-sm shadow-sm">
-                <span className="font-label-sm text-label-sm text-on-surface-variant">TELEMETRY BUFFER</span>
+                <span className="font-label-sm text-label-sm text-on-surface-variant">{t('settings.telemetryBuffer')}</span>
                 <div>
-                  <span className="font-headline-sm text-headline-sm text-on-surface">0 Dropped Pkts</span>
-                  <p className="font-body-sm text-body-sm text-on-surface-variant">24h Cycle</p>
+                  <span className="font-headline-sm text-headline-sm text-on-surface">{t('settings.droppedPackets')}</span>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.cycle')}</p>
                 </div>
-                <span className="font-data-mono text-label-sm text-secondary font-semibold">1,842,090 pts</span>
+                <span className="font-data-mono text-label-sm text-secondary font-semibold">{t('settings.points')}</span>
               </div>
             </div>
 
@@ -388,9 +392,9 @@ export const Settings: React.FC = () => {
               <div className="flex items-center gap-space-sm">
                 <span className="material-symbols-outlined text-secondary text-[24px]">troubleshoot</span>
                 <div className="flex flex-col">
-                  <span className="font-headline-sm text-headline-sm text-on-surface">Diagnostics & Connection Test</span>
+                  <span className="font-headline-sm text-headline-sm text-on-surface">{t('settings.diagnostics')}</span>
                   <span className="font-body-sm text-body-sm text-on-surface-variant">
-                    Execute synthetic health pings across FastAPI and Firebase endpoints.
+                    {t('settings.diagnosticsDescription')}
                   </span>
                   {pingResult && <span className="font-data-mono text-label-sm text-secondary mt-1">{pingResult}</span>}
                 </div>
@@ -404,8 +408,71 @@ export const Settings: React.FC = () => {
                 <span className={`material-symbols-outlined text-[16px] ${testingPing ? 'animate-spin' : ''}`}>
                   {testingPing ? 'refresh' : 'network_check'}
                 </span>
-                <span>{testingPing ? 'Pinging Services...' : 'Test Connection'}</span>
+                <span>{testingPing ? t('settings.pinging') : t('settings.testConnection')}</span>
               </button>
+            </div>
+          </section>
+
+          <section className="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col gap-space-lg" id="appearance">
+            <div className="flex items-center gap-space-sm pb-space-md border-b border-outline-variant/30">
+              <span className="material-symbols-outlined text-secondary text-[24px]">palette</span>
+              <div>
+                <h2 className="font-headline-md text-headline-md text-on-surface">{t('settings.appearance')}</h2>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.themeDescription')}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter-lg">
+              <div className="flex flex-col gap-space-sm">
+                <span className="font-headline-sm text-headline-sm text-on-surface">{t('settings.language')}</span>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.languageDescription')}</p>
+                <div className="flex gap-space-sm" role="group" aria-label={t('settings.language')}>
+                  {(['en', 'bn'] as const).map((code) => (
+                    <button
+                      key={code}
+                      type="button"
+                      onClick={() => setLanguage(code)}
+                      aria-pressed={language === code}
+                      className={`flex-1 rounded-lg border px-space-md py-space-sm text-left transition-colors ${
+                        language === code
+                          ? 'border-primary bg-primary-container text-on-primary'
+                          : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container'
+                      }`}
+                    >
+                      <span className="block font-headline-sm">{code === 'en' ? t('settings.languageEnglish') : t('settings.languageBangla')}</span>
+                      <span className="block font-body-sm opacity-80">{t('settings.savedOnDevice')}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-space-sm">
+                <span className="font-headline-sm text-headline-sm text-on-surface">{t('settings.theme')}</span>
+                <p className="font-body-sm text-body-sm text-on-surface-variant">{t('settings.themeDescription')}</p>
+                <div className="flex gap-space-sm" role="group" aria-label={t('settings.theme')}>
+                  {(['light', 'dark'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setTheme(mode)}
+                      aria-pressed={theme === mode}
+                      className={`flex-1 rounded-lg border px-space-md py-space-sm text-left transition-colors ${
+                        theme === mode
+                          ? 'border-primary bg-primary-container text-on-primary'
+                          : 'border-outline-variant bg-surface text-on-surface hover:bg-surface-container'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 font-headline-sm">
+                        <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                          {mode === 'light' ? 'light_mode' : 'dark_mode'}
+                        </span>
+                        {mode === 'light' ? t('settings.lightMode') : t('settings.darkMode')}
+                      </span>
+                      <span className="block font-body-sm opacity-80">
+                        {mode === 'light' ? t('theme.lightDescription') : t('theme.darkDescription')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
         </main>

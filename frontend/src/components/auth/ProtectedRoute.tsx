@@ -7,9 +7,11 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useI18n } from '../../i18n';
 
 export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
+  const { t } = useI18n();
   const location = useLocation();
 
   if (loading) {
@@ -21,7 +23,8 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#f8faf8',
+          background: 'var(--app-background)',
+          color: 'var(--app-on-surface)',
           gap: '16px',
         }}
       >
@@ -45,25 +48,25 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
         <div style={{ textAlign: 'center' }}>
           <p
             style={{
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
               fontSize: '20px',
               fontWeight: 700,
-              color: '#1a2e1a',
+              color: 'var(--app-on-surface)',
               margin: 0,
               letterSpacing: '-0.3px',
             }}
           >
-            AgroAI
+            {t('common.appName')}
           </p>
           <p
             style={{
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
               fontSize: '14px',
-              color: '#6b7a6b',
+              color: 'var(--app-outline)',
               margin: '6px 0 0',
             }}
           >
-            Checking your session…
+            {t('auth.checkingSession')}
           </p>
         </div>
         {/* Spinner */}
@@ -72,8 +75,8 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
             width: '28px',
             height: '28px',
             borderRadius: '50%',
-            border: '3px solid #d0e8d8',
-            borderTop: '3px solid #2d6a4f',
+            border: '3px solid var(--app-outline-variant)',
+            borderTop: '3px solid var(--app-primary)',
             animation: 'spin 0.8s linear infinite',
             marginTop: '8px',
           }}

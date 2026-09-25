@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 @import "tailwindcss";
 
@@ -65,8 +66,8 @@
   --color-inverse-on-surface: #eaf1ff;
 
   /* Typography scale */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Inter', monospace;
+  --font-sans: 'Inter', 'Noto Sans Bengali', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Inter', 'Noto Sans Bengali', monospace;
 
   /* Spacing (Stitch custom tokens) */
   --spacing-space-xs: 0.25rem;
@@ -89,7 +90,94 @@
   --radius-full: 0.75rem;
 }
 
-/* --- Base Layer --- */
+/* --- Runtime theme tokens --- */
+:root,
+[data-theme='light'] {
+  --app-background: #f8f9ff;
+  --app-on-surface: #121c2a;
+  --app-surface: #ffffff;
+  --app-surface-container: #e6eeff;
+  --app-surface-container-low: #eff4ff;
+  --app-surface-container-high: #dee9fc;
+  --app-outline: #727974;
+  --app-outline-variant: #c1c8c2;
+  --app-primary: #06271a;
+  --app-primary-container: #1e3d2f;
+  --app-on-primary: #ffffff;
+  --app-secondary: #296b3c;
+  --app-secondary-container: #adf3b8;
+  --app-on-secondary-container: #307142;
+  --app-error: #ba1a1a;
+  --app-error-container: #ffdad6;
+  --app-on-error-container: #93000a;
+  --app-shadow: 0 2px 8px -2px rgba(30, 61, 47, 0.05), 0 1px 3px -1px rgba(0, 0, 0, 0.04);
+  --color-surface: #f8f9ff;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-dim: #d0dbed;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-surface-container: #e6eeff;
+  --color-surface-container-high: #dee9fc;
+  --color-surface-container-highest: #d9e3f6;
+  --color-surface-variant: #d9e3f6;
+  --color-background: #f8f9ff;
+  --color-on-surface: #121c2a;
+  --color-on-surface-variant: #424844;
+  --color-on-background: #121c2a;
+  --color-primary: #06271a;
+  --color-primary-container: #1e3d2f;
+  --color-secondary: #296b3c;
+  --color-secondary-container: #adf3b8;
+  --color-on-secondary-container: #307142;
+  --color-outline: #727974;
+  --color-outline-variant: #c1c8c2;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+}
+
+[data-theme='dark'] {
+  --app-background: #101813;
+  --app-on-surface: #e7f1e9;
+  --app-surface: #18231c;
+  --app-surface-container: #243329;
+  --app-surface-container-low: #1d2a21;
+  --app-surface-container-high: #2c3d31;
+  --app-outline: #9aac9e;
+  --app-outline-variant: #45584a;
+  --app-primary: #a8d6b0;
+  --app-primary-container: #2b4d36;
+  --app-on-primary: #0c1b11;
+  --app-secondary: #9ed3a5;
+  --app-secondary-container: #2c5736;
+  --app-on-secondary-container: #c6efc7;
+  --app-error: #ffb4ab;
+  --app-error-container: #5d1a1a;
+  --app-on-error-container: #ffd9d4;
+  --app-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.28), 0 1px 3px -1px rgba(0, 0, 0, 0.2);
+  --color-surface: #101813;
+  --color-surface-bright: #101813;
+  --color-surface-dim: #2c3d31;
+  --color-surface-container-lowest: #18231c;
+  --color-surface-container-low: #1d2a21;
+  --color-surface-container: #243329;
+  --color-surface-container-high: #2c3d31;
+  --color-surface-container-highest: #35483a;
+  --color-surface-variant: #35483a;
+  --color-background: #101813;
+  --color-on-surface: #e7f1e9;
+  --color-on-surface-variant: #b5c8b8;
+  --color-on-background: #e7f1e9;
+  --color-primary: #a8d6b0;
+  --color-primary-container: #2b4d36;
+  --color-secondary: #9ed3a5;
+  --color-secondary-container: #2c5736;
+  --color-on-secondary-container: #c6efc7;
+  --color-outline: #9aac9e;
+  --color-outline-variant: #45584a;
+  --color-error: #ffb4ab;
+  --color-error-container: #5d1a1a;
+}
+
 @layer base {
   html, body {
     margin: 0;
@@ -97,9 +185,9 @@
   }
 
   body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background-color: #f8f9ff;
-    color: #121c2a;
+    font-family: 'Inter', 'Noto Sans Bengali', system-ui, -apple-system, sans-serif;
+    background-color: var(--app-background);
+    color: var(--app-on-surface);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior: none;
@@ -211,65 +299,99 @@
 }
 
 /* --- Stitch Color Utilities --- */
-.bg-surface { background-color: #f8f9ff; }
-.bg-surface-bright { background-color: #f8f9ff; }
-.bg-surface-dim { background-color: #d0dbed; }
-.bg-surface-container-lowest { background-color: #ffffff; }
-.bg-surface-container-low { background-color: #eff4ff; }
-.bg-surface-container { background-color: #e6eeff; }
-.bg-surface-container-high { background-color: #dee9fc; }
-.bg-surface-container-highest { background-color: #d9e3f6; }
-.bg-surface-variant { background-color: #d9e3f6; }
-.bg-primary { background-color: #06271a; }
-.bg-primary-container { background-color: #1e3d2f; }
-.bg-primary-fixed { background-color: #c7ebd6; }
-.bg-primary-fixed-dim { background-color: #accebb; }
-.bg-secondary { background-color: #296b3c; }
-.bg-secondary-container { background-color: #adf3b8; }
-.bg-secondary-fixed { background-color: #adf3b8; }
-.bg-tertiary { background-color: #11270c; }
-.bg-tertiary-container { background-color: #273d20; }
-.bg-tertiary-fixed { background-color: #cfebc1; }
-.bg-error { background-color: #ba1a1a; }
-.bg-error-container { background-color: #ffdad6; }
-.bg-inverse-surface { background-color: #27313f; }
+.bg-surface { background-color: var(--app-background); }
+.bg-surface-bright { background-color: var(--app-background); }
+.bg-surface-dim { background-color: var(--app-surface-container-high); }
+.bg-surface-container-lowest { background-color: var(--app-surface); }
+.bg-surface-container-low { background-color: var(--app-surface-container-low); }
+.bg-surface-container { background-color: var(--app-surface-container); }
+.bg-surface-container-high { background-color: var(--app-surface-container-high); }
+.bg-surface-container-highest { background-color: var(--app-surface-container-high); }
+.bg-surface-variant { background-color: var(--app-surface-container-high); }
+.bg-primary { background-color: var(--app-primary); }
+.bg-primary-container { background-color: var(--app-primary-container); }
+.bg-primary-fixed { background-color: var(--app-secondary-container); }
+.bg-primary-fixed-dim { background-color: var(--app-secondary-container); }
+.bg-secondary { background-color: var(--app-secondary); }
+.bg-secondary-container { background-color: var(--app-secondary-container); }
+.bg-secondary-fixed { background-color: var(--app-secondary-container); }
+.bg-tertiary { background-color: var(--app-primary-container); }
+.bg-tertiary-container { background-color: var(--app-primary-container); }
+.bg-tertiary-fixed { background-color: var(--app-secondary-container); }
+.bg-error { background-color: var(--app-error); }
+.bg-error-container { background-color: var(--app-error-container); }
+.bg-inverse-surface { background-color: var(--app-primary-container); }
 
-.text-on-surface { color: #121c2a; }
-.text-on-surface-variant { color: #424844; }
-.text-on-background { color: #121c2a; }
-.text-on-primary { color: #ffffff; }
-.text-on-primary-container { color: #86a895; }
-.text-on-primary-fixed { color: #012114; }
-.text-on-secondary { color: #ffffff; }
-.text-on-secondary-container { color: #307142; }
-.text-on-secondary-fixed { color: #00210b; }
-.text-on-tertiary { color: #ffffff; }
-.text-on-tertiary-container { color: #8ea882; }
-.text-on-error { color: #ffffff; }
-.text-on-error-container { color: #93000a; }
-.text-inverse-on-surface { color: #eaf1ff; }
-.text-inverse-primary { color: #accebb; }
-.text-surface-tint { color: #456555; }
-.text-primary { color: #06271a; }
-.text-primary-fixed { color: #c7ebd6; }
-.text-primary-fixed-dim { color: #accebb; }
-.text-secondary { color: #296b3c; }
-.text-secondary-container { color: #adf3b8; }
-.text-secondary-fixed { color: #adf3b8; }
-.text-secondary-fixed-dim { color: #92d69d; }
-.text-tertiary { color: #11270c; }
-.text-error { color: #ba1a1a; }
-.text-outline { color: #727974; }
-.text-outline-variant { color: #c1c8c2; }
+.text-on-surface { color: var(--app-on-surface); }
+.text-on-surface-variant { color: color-mix(in srgb, var(--app-on-surface) 68%, transparent); }
+.text-on-background { color: var(--app-on-surface); }
+.text-on-primary { color: var(--app-on-primary); }
+.text-on-primary-container { color: var(--app-on-primary); }
+.text-on-primary-fixed { color: var(--app-on-primary); }
+.text-on-secondary { color: var(--app-on-primary); }
+.text-on-secondary-container { color: var(--app-on-secondary-container); }
+.text-on-secondary-fixed { color: var(--app-on-secondary-container); }
+.text-on-tertiary { color: var(--app-on-primary); }
+.text-on-tertiary-container { color: var(--app-on-primary); }
+.text-on-error { color: var(--app-on-primary); }
+.text-on-error-container { color: var(--app-on-error-container); }
+.text-inverse-on-surface { color: var(--app-on-primary); }
+.text-inverse-primary { color: var(--app-primary); }
+.text-surface-tint { color: var(--app-secondary); }
+.text-primary { color: var(--app-primary); }
+.text-primary-fixed { color: var(--app-secondary-container); }
+.text-primary-fixed-dim { color: var(--app-secondary-container); }
+.text-secondary { color: var(--app-secondary); }
+.text-secondary-container { color: var(--app-secondary-container); }
+.text-secondary-fixed { color: var(--app-secondary-container); }
+.text-secondary-fixed-dim { color: var(--app-secondary-container); }
+.text-tertiary { color: var(--app-primary-container); }
+.text-error { color: var(--app-error); }
+.text-outline { color: var(--app-outline); }
+.text-outline-variant { color: var(--app-outline-variant); }
 
-.border-outline { border-color: #727974; }
-.border-outline-variant { border-color: #c1c8c2; }
-.border-primary { border-color: #06271a; }
-.border-secondary { border-color: #296b3c; }
-.border-error { border-color: #ba1a1a; }
-.border-surface-container { border-color: #e6eeff; }
-.border-surface-container-high { border-color: #dee9fc; }
-.border-surface-container-low { border-color: #eff4ff; }
+.border-outline { border-color: var(--app-outline); }
+.border-outline-variant { border-color: var(--app-outline-variant); }
+.border-primary { border-color: var(--app-primary); }
+.border-secondary { border-color: var(--app-secondary); }
+.border-error { border-color: var(--app-error); }
+.border-surface-container { border-color: var(--app-surface-container); }
+.border-surface-container-high { border-color: var(--app-surface-container-high); }
+.border-surface-container-low { border-color: var(--app-surface-container-low); }
+
+[data-theme='dark'] .bg-white,
+[data-theme='dark'] .bg-white\/80 {
+  background-color: var(--app-surface) !important;
+}
+
+[data-theme='dark'] .bg-gray-50,
+[data-theme='dark'] .bg-gray-100,
+[data-theme='dark'] .bg-amber-50,
+[data-theme='dark'] .bg-red-50,
+[data-theme='dark'] .bg-emerald-100 {
+  background-color: var(--app-surface-container-low) !important;
+}
+
+[data-theme='dark'] .text-gray-700,
+[data-theme='dark'] .text-gray-800,
+[data-theme='dark'] .text-gray-900,
+[data-theme='dark'] .text-amber-700,
+[data-theme='dark'] .text-amber-800,
+[data-theme='dark'] .text-amber-900,
+[data-theme='dark'] .text-red-700,
+[data-theme='dark'] .text-emerald-800,
+[data-theme='dark'] .text-emerald-900 {
+  color: var(--app-on-surface) !important;
+}
+
+[data-theme='dark'] .border-gray-200,
+[data-theme='dark'] .border-gray-300,
+[data-theme='dark'] .border-amber-200,
+[data-theme='dark'] .border-amber-300,
+[data-theme='dark'] .border-red-200,
+[data-theme='dark'] .border-emerald-300 {
+  border-color: var(--app-outline-variant) !important;
+}
 
 /* --- Stitch Spacing Utilities --- */
 .p-space-xs { padding: 0.25rem; }

@@ -6,18 +6,20 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
+import { PreferenceControls } from '../components/PreferenceControls';
 
 // ─── Shared input style ───────────────────────────────────────────────────────
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 14px',
-  border: '1.5px solid #d0d9d0',
+  border: '1.5px solid var(--app-outline-variant)',
   borderRadius: '8px',
   fontSize: '15px',
-  fontFamily: 'Inter, sans-serif',
-  color: '#1a2e1a',
-  background: '#fff',
+  fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
+  color: 'var(--app-on-surface)',
+  background: 'var(--app-surface)',
   outline: 'none',
   transition: 'border-color 0.15s, box-shadow 0.15s',
   boxSizing: 'border-box',
@@ -27,9 +29,9 @@ const labelStyle: React.CSSProperties = {
   display: 'block',
   fontSize: '13px',
   fontWeight: 600,
-  color: '#374537',
+  color: 'var(--app-outline)',
   marginBottom: '6px',
-  fontFamily: 'Inter, sans-serif',
+  fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
 };
 
 const errorBannerStyle: React.CSSProperties = {
@@ -37,24 +39,19 @@ const errorBannerStyle: React.CSSProperties = {
   alignItems: 'flex-start',
   gap: '10px',
   padding: '12px 14px',
-  background: '#fef2f2',
-  border: '1px solid #fecaca',
+  background: 'var(--app-error-container)',
+  border: '1px solid var(--app-error)',
   borderRadius: '8px',
-  color: '#991b1b',
+  color: 'var(--app-on-error-container)',
   fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
+  fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
 };
 
 export const Login: React.FC = () => {
   const { login, loading, isAuthenticated, isFirebaseReady } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Redirect authenticated users away from login
-  if (isAuthenticated) {
-    const from = (location.state as any)?.from?.pathname || '/dashboard';
-    return <Navigate to={from} replace />;
-  }
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -63,10 +60,15 @@ export const Login: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
 
+  if (isAuthenticated) {
+    const from = (location.state as any)?.from?.pathname || '/dashboard';
+    return <Navigate to={from} replace />;
+  }
+
   const validate = (): string => {
-    if (!email.trim()) return 'Please enter your email address.';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Please enter a valid email address.';
-    if (!password) return 'Please enter your password.';
+    if (!email.trim()) return 'validation.emailRequired';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'validation.emailInvalid';
+    if (!password) return 'validation.passwordRequired';
     return '';
   };
 
@@ -85,7 +87,7 @@ export const Login: React.FC = () => {
     setSubmitting(false);
 
     if (!result.success) {
-      setError(result.error || 'Login failed. Please try again.');
+      setError(result.error || 'errors.loginFailed');
     } else {
       const from = (location.state as any)?.from?.pathname || '/dashboard';
       navigate(from, { replace: true });
@@ -94,8 +96,8 @@ export const Login: React.FC = () => {
 
   const inputFocusStyle = (field: string): React.CSSProperties => ({
     ...inputStyle,
-    borderColor: focusedField === field ? '#2d6a4f' : '#d0d9d0',
-    boxShadow: focusedField === field ? '0 0 0 3px rgba(45,106,79,0.12)' : 'none',
+    borderColor: focusedField === field ? 'var(--app-primary)' : 'var(--app-outline-variant)',
+    boxShadow: focusedField === field ? '0 0 0 3px color-mix(in srgb, var(--app-primary) 12%, transparent)' : 'none',
   });
 
   return (
@@ -103,8 +105,9 @@ export const Login: React.FC = () => {
       style={{
         minHeight: '100vh',
         display: 'flex',
-        background: '#f5f8f5',
-        fontFamily: 'Inter, sans-serif',
+        background: 'var(--app-background)',
+        color: 'var(--app-on-surface)',
+        fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
       }}
     >
       {/* Left panel — branding (desktop only) */}
@@ -175,7 +178,7 @@ export const Login: React.FC = () => {
               lineHeight: 1.2,
             }}
           >
-            AgroAI
+            {t('common.appName')}
           </h1>
           <p
             style={{
@@ -186,15 +189,15 @@ export const Login: React.FC = () => {
               lineHeight: 1.5,
             }}
           >
-            Intelligent Agricultural<br />Decision Support System
+            {t('auth.intelligentSystem')}
           </p>
 
           {/* Feature highlights */}
           {[
-            { icon: 'memory', text: 'AI-powered crop analysis' },
-            { icon: 'water_drop', text: 'Smart irrigation planning' },
-            { icon: 'filter_center_focus', text: 'Plant disease detection' },
-            { icon: 'wb_sunny', text: 'Real-time weather insights' },
+            { icon: 'memory', text: t('auth.login.featureCropAnalysis') },
+            { icon: 'water_drop', text: t('auth.login.featureIrrigation') },
+            { icon: 'filter_center_focus', text: t('auth.login.featureDisease') },
+            { icon: 'wb_sunny', text: t('auth.login.featureWeather') },
           ].map((item) => (
             <div
               key={item.icon}
@@ -240,6 +243,10 @@ export const Login: React.FC = () => {
         }}
       >
         <div style={{ width: '100%', maxWidth: '420px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '24px' }}>
+            <PreferenceControls compact />
+          </div>
+
           {/* Mobile logo */}
           <div
             style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px' }}
@@ -260,8 +267,8 @@ export const Login: React.FC = () => {
                 eco
               </span>
             </div>
-            <span style={{ fontSize: '22px', fontWeight: 700, color: '#1b4332', letterSpacing: '-0.3px' }}>
-              AgroAI
+            <span style={{ fontSize: '22px', fontWeight: 700, color: 'var(--app-primary)', letterSpacing: '-0.3px' }}>
+              {t('common.appName')}
             </span>
           </div>
 
@@ -271,15 +278,15 @@ export const Login: React.FC = () => {
               style={{
                 fontSize: '26px',
                 fontWeight: 700,
-                color: '#1a2e1a',
+                color: 'var(--app-on-surface)',
                 margin: '0 0 6px',
                 letterSpacing: '-0.4px',
               }}
             >
-              Welcome back
+              {t('auth.login.welcomeBack')}
             </h2>
-            <p style={{ fontSize: '15px', color: '#6b7a6b', margin: 0 }}>
-              Sign in to your AgroAI account
+            <p style={{ fontSize: '15px', color: 'var(--app-outline)', margin: 0 }}>
+              {t('auth.login.signInSubtitle')}
             </p>
           </div>
 
@@ -291,11 +298,11 @@ export const Login: React.FC = () => {
                 alignItems: 'flex-start',
                 gap: '10px',
                 padding: '12px 14px',
-                background: '#fffbeb',
-                border: '1px solid #fde68a',
+                background: 'var(--app-surface-container-high)',
+                border: '1px solid var(--app-outline-variant)',
                 borderRadius: '8px',
                 marginBottom: '20px',
-                color: '#92400e',
+                color: 'var(--app-outline)',
                 fontSize: '13px',
               }}
             >
@@ -303,19 +310,18 @@ export const Login: React.FC = () => {
                 warning
               </span>
               <span>
-                Firebase authentication is not configured.<br />
-                Please set credentials in <code style={{ background: '#fef3c7', padding: '1px 4px', borderRadius: '3px' }}>frontend/.env</code>
+                {t('auth.firebaseNotConfigured')}
               </span>
             </div>
           )}
 
           {/* Error banner */}
           {error && (
-            <div style={{ ...errorBannerStyle, marginBottom: '20px' }}>
+            <div id="login-error" style={{ ...errorBannerStyle, marginBottom: '20px' }}>
               <span className="material-symbols-outlined" style={{ fontSize: '18px', flexShrink: 0, marginTop: '1px' }}>
                 error
               </span>
-              <span>{error}</span>
+              <span>{t(error)}</span>
             </div>
           )}
 
@@ -324,14 +330,14 @@ export const Login: React.FC = () => {
             {/* Email */}
             <div style={{ marginBottom: '18px' }}>
               <label htmlFor="login-email" style={labelStyle}>
-                Email address
+                {t('auth.login.email')}
               </label>
               <input
                 id="login-email"
                 type="email"
                 name="email"
                 autoComplete="email"
-                placeholder="you@example.com"
+                placeholder={t('auth.login.emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onFocus={() => setFocusedField('email')}
@@ -345,7 +351,7 @@ export const Login: React.FC = () => {
             {/* Password */}
             <div style={{ marginBottom: '10px' }}>
               <label htmlFor="login-password" style={labelStyle}>
-                Password
+                {t('auth.login.password')}
               </label>
               <div style={{ position: 'relative' }}>
                 <input
@@ -353,7 +359,7 @@ export const Login: React.FC = () => {
                   type={showPassword ? 'text' : 'password'}
                   name="current-password"
                   autoComplete="current-password"
-                  placeholder="Your password"
+                  placeholder={t('auth.login.passwordPlaceholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onFocus={() => setFocusedField('password')}
@@ -372,12 +378,12 @@ export const Login: React.FC = () => {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    color: '#6b7a6b',
+                    color: 'var(--app-outline)',
                     padding: '2px',
                     display: 'flex',
                     alignItems: 'center',
                   }}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? t('accessibility.hidePassword') : t('accessibility.showPassword')}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
                     {showPassword ? 'visibility_off' : 'visibility'}
@@ -392,12 +398,12 @@ export const Login: React.FC = () => {
                 to="/forgot-password"
                 style={{
                   fontSize: '13px',
-                  color: '#2d6a4f',
+                  color: 'var(--app-secondary)',
                   textDecoration: 'none',
                   fontWeight: 500,
                 }}
               >
-                Forgot password?
+                {t('auth.login.forgotPassword')}
               </Link>
             </div>
 
@@ -409,13 +415,13 @@ export const Login: React.FC = () => {
               style={{
                 width: '100%',
                 padding: '12px',
-                background: submitting ? '#74c69d' : '#2d6a4f',
-                color: '#fff',
+                background: submitting ? 'var(--app-outline-variant)' : 'var(--app-primary)',
+                color: submitting ? 'var(--app-outline)' : 'var(--app-on-primary)',
                 border: 'none',
                 borderRadius: '8px',
                 fontSize: '15px',
                 fontWeight: 600,
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
                 cursor: submitting ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
@@ -438,7 +444,7 @@ export const Login: React.FC = () => {
                   }}
                 />
               )}
-              {submitting ? 'Signing in…' : 'Sign in'}
+              {submitting ? t('auth.login.signingIn') : t('auth.login.signIn')}
             </button>
 
             {/* Quick Demo Login Option */}
@@ -458,13 +464,13 @@ export const Login: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '10px',
-                  background: '#f0fdf4',
-                  color: '#2d6a4f',
-                  border: '1.5px solid #bbf7d0',
+                  background: 'var(--app-secondary-container)',
+                  color: 'var(--app-on-secondary-container)',
+                  border: '1.5px solid var(--app-secondary)',
                   borderRadius: '8px',
                   fontSize: '14px',
                   fontWeight: 600,
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -476,13 +482,13 @@ export const Login: React.FC = () => {
                 <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
                   bolt
                 </span>
-                Quick Demo Login (1-Click)
+                {t('auth.login.quickDemo')}
               </button>
             </div>
 
             <style>{`
               @keyframes spin { to { transform: rotate(360deg); } }
-              #login-submit-btn:hover:not(:disabled) { background: #1b4332; }
+              #login-submit-btn:hover:not(:disabled) { background: var(--app-primary-container); }
             `}</style>
           </form>
 
@@ -491,21 +497,21 @@ export const Login: React.FC = () => {
             style={{
               textAlign: 'center',
               fontSize: '14px',
-              color: '#6b7a6b',
+              color: 'var(--app-outline)',
               marginTop: '24px',
               margin: '24px 0 0',
             }}
           >
-            Don't have an account?{' '}
+            {t('auth.login.noAccount')}{' '}
             <Link
               to="/register"
               style={{
-                color: '#2d6a4f',
+                color: 'var(--app-secondary)',
                 fontWeight: 600,
                 textDecoration: 'none',
               }}
             >
-              Create account
+              {t('auth.login.createAccount')}
             </Link>
           </p>
         </div>

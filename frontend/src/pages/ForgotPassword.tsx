@@ -6,16 +6,18 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
+import { PreferenceControls } from '../components/PreferenceControls';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '10px 14px',
-  border: '1.5px solid #d0d9d0',
+  border: '1.5px solid var(--app-outline-variant)',
   borderRadius: '8px',
   fontSize: '15px',
-  fontFamily: 'Inter, sans-serif',
-  color: '#1a2e1a',
-  background: '#fff',
+  fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
+  color: 'var(--app-on-surface)',
+  background: 'var(--app-surface)',
   outline: 'none',
   transition: 'border-color 0.15s, box-shadow 0.15s',
   boxSizing: 'border-box',
@@ -23,8 +25,7 @@ const inputStyle: React.CSSProperties = {
 
 export const ForgotPassword: React.FC = () => {
   const { sendPasswordReset, isAuthenticated, isFirebaseReady } = useAuth();
-
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  const { t } = useI18n();
 
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -32,17 +33,19 @@ export const ForgotPassword: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [focused, setFocused] = useState(false);
 
+  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccessMessage('');
 
     if (!email.trim()) {
-      setError('Please enter your email address.');
+      setError('validation.emailRequired');
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('Please enter a valid email address.');
+      setError('validation.emailInvalid');
       return;
     }
 
@@ -51,9 +54,9 @@ export const ForgotPassword: React.FC = () => {
     setSubmitting(false);
 
     if (!result.success) {
-      setError(result.error || 'Failed to send reset email. Please try again.');
+      setError(result.error || 'errors.resetEmailFailed');
     } else {
-      setSuccessMessage('Password reset email sent! Please check your inbox (and spam folder).');
+      setSuccessMessage('auth.passwordReset.success');
     }
   };
 
@@ -64,12 +67,17 @@ export const ForgotPassword: React.FC = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: '#f5f8f5',
-        fontFamily: 'Inter, sans-serif',
+        background: 'var(--app-background)',
+        color: 'var(--app-on-surface)',
+        fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
         padding: '24px',
       }}
     >
       <div style={{ width: '100%', maxWidth: '420px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+          <PreferenceControls compact />
+        </div>
+
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '36px', justifyContent: 'center' }}>
           <div
@@ -85,17 +93,17 @@ export const ForgotPassword: React.FC = () => {
           >
             <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#fff' }}>eco</span>
           </div>
-          <span style={{ fontSize: '24px', fontWeight: 700, color: '#1b4332', letterSpacing: '-0.3px' }}>AgroAI</span>
+          <span style={{ fontSize: '24px', fontWeight: 700, color: 'var(--app-primary)', letterSpacing: '-0.3px' }}>{t('common.appName')}</span>
         </div>
 
         {/* Card */}
         <div
           style={{
-            background: '#fff',
+            background: 'var(--app-surface)',
             borderRadius: '16px',
             padding: '36px 32px',
-            border: '1px solid #e0e8e0',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+            border: '1px solid var(--app-outline-variant)',
+            boxShadow: 'var(--app-shadow)',
           }}
         >
           {/* Icon */}
@@ -104,43 +112,43 @@ export const ForgotPassword: React.FC = () => {
               width: '52px',
               height: '52px',
               borderRadius: '14px',
-              background: '#f0fdf4',
+              background: 'var(--app-secondary-container)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               marginBottom: '20px',
-              border: '1px solid #bbf7d0',
+              border: '1px solid var(--app-secondary)',
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: '26px', color: '#2d6a4f' }}>lock_reset</span>
+            <span className="material-symbols-outlined" style={{ fontSize: '26px', color: 'var(--app-secondary)' }}>lock_reset</span>
           </div>
 
-          <h2 style={{ fontSize: '22px', fontWeight: 700, color: '#1a2e1a', margin: '0 0 8px', letterSpacing: '-0.3px' }}>
-            Reset your password
+          <h2 style={{ fontSize: '22px', fontWeight: 700, color: 'var(--app-on-surface)', margin: '0 0 8px', letterSpacing: '-0.3px' }}>
+            {t('auth.passwordReset.title')}
           </h2>
-          <p style={{ fontSize: '14px', color: '#6b7a6b', margin: '0 0 24px', lineHeight: 1.5 }}>
-            Enter your email address and we'll send you a link to reset your password.
+          <p style={{ fontSize: '14px', color: 'var(--app-outline)', margin: '0 0 24px', lineHeight: 1.5 }}>
+            {t('auth.passwordReset.description')}
           </p>
 
           {!isFirebaseReady && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', marginBottom: '20px', color: '#92400e', fontSize: '13px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', background: 'var(--app-surface-container-high)', border: '1px solid var(--app-outline-variant)', borderRadius: '8px', marginBottom: '20px', color: 'var(--app-outline)', fontSize: '13px' }}>
               <span className="material-symbols-outlined" style={{ fontSize: '18px', flexShrink: 0 }}>warning</span>
-              <span>Firebase is not configured. Please add credentials to <code style={{ background: '#fef3c7', padding: '1px 4px', borderRadius: '3px' }}>frontend/.env</code></span>
+              <span>{t('auth.firebaseNotConfigured')}</span>
             </div>
           )}
 
           {error && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#991b1b', fontSize: '14px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px 14px', background: 'var(--app-error-container)', border: '1px solid var(--app-error)', borderRadius: '8px', color: 'var(--app-on-error-container)', fontSize: '14px', marginBottom: '20px' }}>
               <span className="material-symbols-outlined" style={{ fontSize: '18px', flexShrink: 0, marginTop: '1px' }}>error</span>
-              <span>{error}</span>
+              <span>{t(error)}</span>
             </div>
           )}
 
           {successMessage ? (
             <div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '14px 16px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', color: '#166534', fontSize: '14px', marginBottom: '24px' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '20px', flexShrink: 0, color: '#22c55e' }}>mark_email_read</span>
-                <span>{successMessage}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '14px 16px', background: 'var(--app-secondary-container)', border: '1px solid var(--app-secondary)', borderRadius: '8px', color: 'var(--app-on-secondary-container)', fontSize: '14px', marginBottom: '24px' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: '20px', flexShrink: 0, color: 'var(--app-secondary)' }}>mark_email_read</span>
+                <span>{t(successMessage)}</span>
               </div>
               <Link
                 to="/login"
@@ -148,37 +156,37 @@ export const ForgotPassword: React.FC = () => {
                   display: 'block',
                   textAlign: 'center',
                   padding: '12px',
-                  background: '#2d6a4f',
-                  color: '#fff',
+                  background: 'var(--app-primary)',
+                  color: 'var(--app-on-primary)',
                   borderRadius: '8px',
                   fontSize: '15px',
                   fontWeight: 600,
                   textDecoration: 'none',
                 }}
               >
-                Back to Login
+                {t('auth.passwordReset.backToLogin')}
               </Link>
             </div>
           ) : (
             <form onSubmit={handleSubmit} noValidate>
               <div style={{ marginBottom: '20px' }}>
-                <label htmlFor="forgot-email" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374537', marginBottom: '6px' }}>
-                  Email address
+                <label htmlFor="forgot-email" style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--app-outline)', marginBottom: '6px' }}>
+                  {t('auth.passwordReset.email')}
                 </label>
                 <input
                   id="forgot-email"
                   type="email"
                   name="email"
                   autoComplete="email"
-                  placeholder="you@example.com"
+                  placeholder={t('auth.passwordReset.emailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onFocus={() => setFocused(true)}
                   onBlur={() => setFocused(false)}
                   style={{
                     ...inputStyle,
-                    borderColor: focused ? '#2d6a4f' : '#d0d9d0',
-                    boxShadow: focused ? '0 0 0 3px rgba(45,106,79,0.12)' : 'none',
+                    borderColor: focused ? 'var(--app-primary)' : 'var(--app-outline-variant)',
+                    boxShadow: focused ? '0 0 0 3px color-mix(in srgb, var(--app-primary) 12%, transparent)' : 'none',
                   }}
                   disabled={submitting}
                 />
@@ -191,13 +199,13 @@ export const ForgotPassword: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '12px',
-                  background: submitting ? '#74c69d' : '#2d6a4f',
-                  color: '#fff',
+                  background: submitting ? 'var(--app-outline-variant)' : 'var(--app-primary)',
+                  color: submitting ? 'var(--app-outline)' : 'var(--app-on-primary)',
                   border: 'none',
                   borderRadius: '8px',
                   fontSize: '15px',
                   fontWeight: 600,
-                  fontFamily: 'Inter, sans-serif',
+                  fontFamily: "'Inter', 'Noto Sans Bengali', sans-serif",
                   cursor: submitting ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -210,20 +218,20 @@ export const ForgotPassword: React.FC = () => {
                 {submitting && (
                   <span style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2.5px solid rgba(255,255,255,0.4)', borderTop: '2.5px solid #fff', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />
                 )}
-                {submitting ? 'Sending…' : 'Send Reset Email'}
+                {submitting ? t('auth.passwordReset.sending') : t('auth.passwordReset.sendEmail')}
               </button>
 
               <style>{`
                 @keyframes spin { to { transform: rotate(360deg); } }
-                #forgot-submit-btn:hover:not(:disabled) { background: #1b4332; }
+                #forgot-submit-btn:hover:not(:disabled) { background: var(--app-primary-container); }
               `}</style>
             </form>
           )}
 
           <div style={{ textAlign: 'center', marginTop: '8px' }}>
-            <Link to="/login" style={{ fontSize: '13px', color: '#6b7a6b', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <Link to="/login" style={{ fontSize: '13px', color: 'var(--app-outline)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
               <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>arrow_back</span>
-              Back to Login
+              {t('auth.passwordReset.backToLogin')}
             </Link>
           </div>
         </div>

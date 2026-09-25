@@ -8,17 +8,27 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
 import { apiService } from '../services/api';
 import type { Field } from '../services/ecosystem';
 import { getOwnerFields, getFarmerAssignedFields } from '../services/ecosystem';
 
 type PipelineTab = 'all' | 'clustering' | 'rules' | 'csp' | 'astar';
 
+type TelemetryValues = Record<string, string | number>;
+
+interface LocalizedTelemetryText {
+  key: string;
+  fallback: string;
+  fallbackKey?: string;
+  values?: TelemetryValues;
+}
+
 interface TelemetryLogEntry {
   id: string;
   timestamp: string;
-  pipeline: string;
-  description: string;
+  pipeline: LocalizedTelemetryText;
+  description: LocalizedTelemetryText;
   status: string;
   statusType: 'optimal' | 'satisfied' | 'clear' | 'suggested' | 'warning' | 'error';
   delta: string;
@@ -26,6 +36,7 @@ interface TelemetryLogEntry {
 
 export const AIAnalysis: React.FC = () => {
   const { user, userRole } = useAuth();
+  const { t, translateEnum, formatDate, formatNumber } = useI18n();
 
   // State Management
   const [fields, setFields] = useState<Field[]>([]);
@@ -47,36 +58,36 @@ export const AIAnalysis: React.FC = () => {
     {
       id: 'log_1',
       timestamp: '14:32:08.112',
-      pipeline: 'K-Means Cluster Engine',
-      description: 'Cluster assignment evaluated for selected field parcel.',
-      status: 'Optimal',
+      pipeline: { key: 'aiAnalysis.kmeansPipeline', fallback: 'K-Means Cluster Engine', fallbackKey: 'algorithms.kmeans' },
+      description: { key: 'aiAnalysis.clusterAssignmentEvaluated', fallback: 'Cluster assignment evaluated for selected field parcel.' },
+      status: 'optimal',
       statusType: 'optimal',
       delta: '8.4ms',
     },
     {
       id: 'log_2',
       timestamp: '14:31:54.004',
-      pipeline: 'AC-3 Constraint Engine',
-      description: 'Arc consistency reduced domain D(pump_cycle) to 3 non-conflicting time slices.',
-      status: 'Satisfied',
+      pipeline: { key: 'aiAnalysis.ac3ConstraintEngine', fallback: 'AC-3 Constraint Engine', fallbackKey: 'algorithms.ac3' },
+      description: { key: 'aiAnalysis.arcConsistencyReducedDomain', fallback: 'Arc consistency reduced domain D(pump_cycle) to 3 non-conflicting time slices.' },
+      status: 'satisfied',
       statusType: 'satisfied',
       delta: '1.8ms',
     },
     {
       id: 'log_3',
       timestamp: '14:30:12.780',
-      pipeline: 'A* Navigation Planner',
-      description: 'Calculated optimal trajectory avoiding wet low-lying zone near drainage.',
-      status: 'Clear Path',
+      pipeline: { key: 'aiAnalysis.astarNavigationPipeline', fallback: 'A* Navigation Planner', fallbackKey: 'algorithms.astar' },
+      description: { key: 'aiAnalysis.optimalTrajectoryCalculated', fallback: 'Calculated optimal trajectory avoiding wet low-lying zone near drainage.' },
+      status: 'clearPath',
       statusType: 'clear',
       delta: '14.1ms',
     },
     {
       id: 'log_4',
       timestamp: '14:28:44.291',
-      pipeline: 'Agronomic Decision Tree',
-      description: 'Rule AGR-DT-402 matched parcel conditions: Moisture < 45% & Rain < 5mm.',
-      status: 'Action Suggested',
+      pipeline: { key: 'aiAnalysis.agronomicDecisionTree', fallback: 'Agronomic Decision Tree', fallbackKey: 'algorithms.dtree' },
+      description: { key: 'aiAnalysis.ruleMatchedConditions', fallback: 'Rule AGR-DT-402 matched parcel conditions: Moisture < 45% & Rain < 5mm.' },
+      status: 'actionSuggested',
       statusType: 'suggested',
       delta: '0.9ms',
     },
@@ -176,28 +187,28 @@ export const AIAnalysis: React.FC = () => {
     if (target) {
       setSelectedField(target);
       runFullPipeline(target);
-      addTelemetryLog('Field Switcher', `Context switched to field ${target.name} (${target.crop}). Pipeline re-evaluated.`, 'Optimal', 'optimal', '4.2ms');
+      addTelemetryLog({
+        pipeline: { key: 'aiAnalysis.fieldSwitcher', fallback: 'Field Switcher', fallbackKey: 'aiAnalysis.selectTargetField' },
+        description: {
+          key: 'aiAnalysis.fieldContextSwitched',
+          fallback: 'Context switched to field {field} ({crop}). Pipeline re-evaluated.',
+          values: { field: target.name, crop: target.crop || 'Crop' },
+        },
+        status: 'optimal',
+        statusType: 'optimal',
+        delta: '4.2ms',
+      });
     }
   };
 
   // Helper to add telemetry log entry
-  const addTelemetryLog = (
-    pipeline: string,
-    description: string,
-    status: string,
-    statusType: 'optimal' | 'satisfied' | 'clear' | 'suggested' | 'warning' | 'error',
-    delta: string
-  ) => {
+  const addTelemetryLog = (entry: Omit<TelemetryLogEntry, 'id' | 'timestamp'>) => {
     const now = new Date();
-    const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+    const timeStr = `${formatDate(now, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}.${String(now.getMilliseconds()).padStart(3, '0')}`;
     const newLog: TelemetryLogEntry = {
       id: `log_${Date.now()}`,
       timestamp: timeStr,
-      pipeline,
-      description,
-      status,
-      statusType,
-      delta,
+      ...entry,
     };
     setTelemetryLogs((prev) => [newLog, ...prev.slice(0, 9)]);
   };
@@ -218,10 +229,23 @@ export const AIAnalysis: React.FC = () => {
         rainfall: selectedField.rainfall || 0.2,
       });
       setDtreeResult(res);
-      setActionSuccessMsg(`Rule AGR-DT-402 Executed for ${selectedField.name}: ${res.recommendation || 'Initiate 1.5hr cycle on Pump 2'}`);
-      addTelemetryLog('Agronomic Decision Tree', `Rule AGR-DT-402 executed for ${selectedField.name}. Triggered pump intervention cycle.`, 'Action Triggered', 'suggested', '1.2ms');
+      const fallbackRecommendation = t('common.enums.recommendations.initiatePumpCycle');
+      const recommendation = translateEnum('common.enums.recommendations', res.recommendation, fallbackRecommendation);
+      setActionSuccessMsg(t('aiAnalysis.ruleExecuted', { field: selectedField.name, recommendation }));
+      addTelemetryLog({
+        pipeline: { key: 'aiAnalysis.agronomicDecisionTree', fallback: 'Agronomic Decision Tree', fallbackKey: 'algorithms.dtree' },
+        description: {
+          key: 'aiAnalysis.ruleExecuted',
+          fallback: 'Rule AGR-DT-402 executed for {field}: {recommendation}',
+          values: { field: selectedField.name, recommendation: res.recommendation || fallbackRecommendation },
+        },
+        status: 'actionTriggered',
+        statusType: 'suggested',
+        delta: '1.2ms',
+      });
     } catch {
-      setActionSuccessMsg(`Rule AGR-DT-402 Executed: Initiate 1.5hr cycle on Pump 2 for ${selectedField.name}`);
+      const recommendation = t('common.enums.recommendations.initiatePumpCycle');
+      setActionSuccessMsg(t('aiAnalysis.ruleExecuted', { field: selectedField.name, recommendation }));
     } finally {
       setExecutingModule(null);
       setTimeout(() => setActionSuccessMsg(null), 5000);
@@ -236,10 +260,20 @@ export const AIAnalysis: React.FC = () => {
     try {
       const res = await apiService.runCSP();
       setCspResult(res);
-      setActionSuccessMsg(`Irrigation schedule committed for ${selectedField.name}: Slot 04:30 - 06:00 allocated with zero domain conflict.`);
-      addTelemetryLog('CSP Solver (AC-3)', `Irrigation plan committed for ${selectedField.name}. 04:30-06:00 window active in system queue.`, 'Satisfied', 'satisfied', '2.1ms');
+      setActionSuccessMsg(t('aiAnalysis.planCommitted', { field: selectedField.name }));
+      addTelemetryLog({
+        pipeline: { key: 'aiAnalysis.cspSolverPipeline', fallback: 'CSP Solver (AC-3)', fallbackKey: 'algorithms.csp' },
+        description: {
+          key: 'aiAnalysis.planCommitted',
+          fallback: 'Irrigation schedule committed for {field}: 04:30–06:00 allocated with zero conflict.',
+          values: { field: selectedField.name },
+        },
+        status: 'satisfied',
+        statusType: 'satisfied',
+        delta: '2.1ms',
+      });
     } catch {
-      setActionSuccessMsg(`Irrigation plan committed for ${selectedField.name}: Slot 04:30 - 06:00 allocated.`);
+      setActionSuccessMsg(t('aiAnalysis.planCommitted', { field: selectedField.name }));
     } finally {
       setExecutingModule(null);
       setTimeout(() => setActionSuccessMsg(null), 5000);
@@ -254,10 +288,20 @@ export const AIAnalysis: React.FC = () => {
     try {
       const res = await apiService.runSearch('astar');
       setAstarResult(res);
-      setActionSuccessMsg(`A* Path queued for simulation: Route transmitted to Tractor Unit T-1 for ${selectedField.name}.`);
-      addTelemetryLog('A* Navigation Planner', `Route transmitted to Tractor T-1 for ${selectedField.name}. Waypoints: Central Depot -> Field Headland.`, 'Clear Path', 'clear', '12.4ms');
+      setActionSuccessMsg(t('aiAnalysis.routeQueued', { field: selectedField.name }));
+      addTelemetryLog({
+        pipeline: { key: 'aiAnalysis.astarNavigationPipeline', fallback: 'A* Navigation Planner', fallbackKey: 'algorithms.astar' },
+        description: {
+          key: 'aiAnalysis.routeQueued',
+          fallback: 'A* path queued for simulation and transmitted to Tractor T-1 for {field}.',
+          values: { field: selectedField.name },
+        },
+        status: 'clearPath',
+        statusType: 'clear',
+        delta: '12.4ms',
+      });
     } catch {
-      setActionSuccessMsg(`Route transmitted to Tractor Unit T-1 for ${selectedField.name} (Simulation mode).`);
+      setActionSuccessMsg(t('aiAnalysis.routeQueued', { field: selectedField.name }));
     } finally {
       setExecutingModule(null);
       setTimeout(() => setActionSuccessMsg(null), 5000);
@@ -271,6 +315,26 @@ export const AIAnalysis: React.FC = () => {
   const isMoistureLow = currentMoisture < 45;
   const isRainLow = currentRain < 5;
 
+  const localizeTelemetryValues = (values?: TelemetryValues) => {
+    if (!values) return undefined;
+    const localized = { ...values };
+    if (typeof localized.crop === 'string') {
+      localized.crop = translateEnum('common.enums.crops', localized.crop, localized.crop);
+    }
+    if (typeof localized.recommendation === 'string') {
+      localized.recommendation = translateEnum('common.enums.recommendations', localized.recommendation, localized.recommendation);
+    }
+    return localized;
+  };
+
+  const localizeTelemetryText = (text: LocalizedTelemetryText) => {
+    const fallback = text.fallbackKey ? t(text.fallbackKey) : text.fallback;
+    return t(text.key, fallback, localizeTelemetryValues(text.values));
+  };
+
+  const selectedFieldLabel = `${t('accessibility.selected')} ${t('dashboard.field')}`;
+  const targetFieldLabel = `${t('common.select')} ${t('dashboard.field')}`;
+
   return (
     <div className="flex flex-col w-full bg-surface min-h-screen">
       <div className="px-margin-lg py-margin flex flex-col gap-space-xl max-w-[1600px] mx-auto w-full">
@@ -279,15 +343,15 @@ export const AIAnalysis: React.FC = () => {
           <div className="flex flex-col gap-space-xs max-w-3xl">
             <div className="flex items-center gap-space-xs text-on-surface-variant font-label-sm text-xs uppercase tracking-wider font-semibold">
               <span className="material-symbols-outlined text-[15px] text-secondary">model_training</span>
-              <span>Inference Engine v2.4</span>
+              <span>{t('aiAnalysis.inferenceEngine')}</span>
               <span>•</span>
-              <span>Salinas Valley Operational Grid</span>
+              <span>{t('aiAnalysis.operationalGrid')}</span>
             </div>
             <h1 className="font-display-lg text-display-lg text-on-surface tracking-tight font-semibold">
-              AI Decision Support &amp; Model Insights
+              {t('aiAnalysis.title')}
             </h1>
             <p className="font-body-lg text-body-lg text-on-surface-variant">
-              Integrated machine learning and classical AI algorithms applied to multi-spectral farm telemetry
+              {t('aiAnalysis.description')}
             </p>
           </div>
 
@@ -297,18 +361,18 @@ export const AIAnalysis: React.FC = () => {
             <div className="flex items-center gap-2 bg-surface-container-lowest px-3 py-2 rounded-xl shadow-xs border border-outline-variant/40">
               <span className="material-symbols-outlined text-secondary text-[20px]">layers</span>
               <div className="flex flex-col">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">Select Target Field</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant">{t('aiAnalysis.selectTargetField')}</span>
                 <select
                   value={selectedField?.fieldId || (selectedField as any)?.id || ''}
                   onChange={handleFieldChange}
                   className="bg-transparent font-headline-sm text-xs font-bold text-on-surface focus:outline-none cursor-pointer"
                 >
                   {fields.length === 0 ? (
-                    <option value="">No Fields Available</option>
+                    <option value="">{t('aiAnalysis.noFieldsAvailable')}</option>
                   ) : (
                     fields.map((f) => (
                       <option key={f.fieldId || (f as any).id} value={f.fieldId || (f as any).id}>
-                        {f.name} ({f.crop})
+                        {f.name} ({translateEnum('common.enums.crops', f.crop, f.crop)})
                       </option>
                     ))
                   )}
@@ -323,8 +387,8 @@ export const AIAnalysis: React.FC = () => {
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-secondary"></span>
               </span>
               <div className="flex flex-col">
-                <span className="font-label-sm text-xs text-on-surface font-semibold">FastAPI Engine: Active • Latency: 42ms</span>
-                <span className="font-label-sm text-[11px] text-on-surface-variant">PyTorch 2.2.1 • Scikit-learn 1.4 • Deterministic Seed 42</span>
+                <span className="font-label-sm text-xs text-on-surface font-semibold">{t('aiAnalysis.engineActive')}</span>
+                <span className="font-label-sm text-[11px] text-on-surface-variant">PyTorch 2.2.1 • Scikit-learn 1.4 • {t('aiAnalysis.deterministicSeed', 'Deterministic Seed {seed}', { seed: 42 })}</span>
               </div>
             </div>
           </div>
@@ -354,7 +418,7 @@ export const AIAnalysis: React.FC = () => {
                 : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface border border-outline-variant/40'
             }`}
           >
-            All Active Pipelines (4)
+            {t('aiAnalysis.allPipelines', { count: formatNumber(4) })}
           </button>
 
           <button
@@ -366,7 +430,7 @@ export const AIAnalysis: React.FC = () => {
                 : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface border border-outline-variant/40'
             }`}
           >
-            Field Clustering (K-Means)
+            {t('aiAnalysis.fieldClusteringTab')}
           </button>
 
           <button
@@ -378,7 +442,7 @@ export const AIAnalysis: React.FC = () => {
                 : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface border border-outline-variant/40'
             }`}
           >
-            Agronomic Recommendations (Decision Tree)
+            {t('aiAnalysis.recommendationsTab')}
           </button>
 
           <button
@@ -390,7 +454,7 @@ export const AIAnalysis: React.FC = () => {
                 : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface border border-outline-variant/40'
             }`}
           >
-            Irrigation Optimization (CSP &amp; AC-3)
+            {t('aiAnalysis.irrigationTab')}
           </button>
 
           <button
@@ -402,7 +466,7 @@ export const AIAnalysis: React.FC = () => {
                 : 'bg-surface-container-lowest text-on-surface-variant hover:text-on-surface border border-outline-variant/40'
             }`}
           >
-            Tractor Pathfinding (A*)
+            {t('aiAnalysis.pathfindingTab')}
           </button>
         </div>
 
@@ -415,21 +479,24 @@ export const AIAnalysis: React.FC = () => {
               </div>
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-secondary">Unified AI Decision Synthesis</span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-secondary">{t('aiAnalysis.unifiedSynthesis')}</span>
                   <span className="px-2 py-0.5 rounded bg-primary-container text-on-primary text-[10px] font-semibold">
-                    Target: {selectedField.name} ({selectedField.crop})
+                    {t('aiAnalysis.target', {
+                      field: selectedField.name,
+                      crop: translateEnum('common.enums.crops', selectedField.crop, selectedField.crop),
+                    })}
                   </span>
                 </div>
                 <p className="text-sm font-semibold text-on-surface">
                   {isMoistureLow
-                    ? `Critical Moisture Stress Detected (${currentMoisture}%). Immediate 1.5hr cycle on Pump 2 recommended during optimal CSP window (04:30 - 06:00).`
-                    : `Optimal Soil Environment (${currentMoisture}% Moisture). Regular maintenance irrigation schedule active with zero route obstacle.`}
+                    ? t('aiAnalysis.criticalMoisture', { value: formatNumber(currentMoisture, { maximumFractionDigits: 1 }) })
+                    : t('aiAnalysis.optimalSoil', { value: formatNumber(currentMoisture, { maximumFractionDigits: 1 }) })}
                 </p>
                 <div className="flex flex-wrap items-center gap-4 text-xs text-on-surface-variant pt-1 font-body-sm">
-                  <span>K-Means: <strong className="text-on-surface">{isMoistureLow ? 'Cluster 2 (Thermal Stress)' : 'Cluster 0 (Optimal)'}</strong></span>
-                  <span>Decision Tree: <strong className="text-on-surface">{isMoistureLow ? 'Pump 2 Cycle' : 'No Action Required'}</strong></span>
-                  <span>CSP AC-3: <strong className="text-on-surface">04:30 - 06:00 Valid</strong></span>
-                  <span>A* Path: <strong className="text-on-surface">840m Clear Route</strong></span>
+                  <span>{t('aiAnalysis.kmeansLabel', 'K-Means')}: <strong className="text-on-surface">{isMoistureLow ? t('aiAnalysis.thermalStressCluster') : t('aiAnalysis.optimalCluster')}</strong></span>
+                  <span>{t('aiAnalysis.decisionTreeLabel', 'Decision Tree')}: <strong className="text-on-surface">{isMoistureLow ? t('aiAnalysis.pumpCycle') : t('aiAnalysis.noActionRequired')}</strong></span>
+                  <span>{t('aiAnalysis.cspAc3Label', 'CSP AC-3')}: <strong className="text-on-surface">{t('aiAnalysis.validWindow')}</strong></span>
+                  <span>{t('aiAnalysis.aStarPathLabel', 'A* Path')}: <strong className="text-on-surface">{t('aiAnalysis.clearRoute')}</strong></span>
                 </div>
               </div>
             </div>
@@ -441,7 +508,7 @@ export const AIAnalysis: React.FC = () => {
               className="px-4 py-2.5 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:bg-primary-container transition-colors flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-[16px]">refresh</span>
-              <span>{loading ? 'Analyzing...' : 'Re-Run All Pipelines'}</span>
+              <span>{loading ? t('aiAnalysis.analyzing') : t('aiAnalysis.reRun')}</span>
             </button>
           </section>
         )}
@@ -461,20 +528,20 @@ export const AIAnalysis: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center gap-space-xs">
-                      <h2 className="font-headline-sm text-headline-sm text-on-surface">Field Environmental Clustering</h2>
+                      <h2 className="font-headline-sm text-headline-sm text-on-surface">{t('aiAnalysis.clusteringTitle')}</h2>
                       <span className="font-label-sm text-xs px-space-xs py-0.5 rounded bg-surface-container text-on-surface-variant font-semibold">k=4</span>
                     </div>
-                    <p className="font-label-md text-xs text-on-surface-variant">Unsupervised topology grouping (Soil Moisture % vs Ambient Temp °C)</p>
+                    <p className="font-label-md text-xs text-on-surface-variant">{t('aiAnalysis.clusteringDescription')}</p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-space-md text-right">
                   <div>
-                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">Silhouette Coeff</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">{t('aiAnalysis.silhouette')}</span>
                     <span className="font-data-mono text-headline-sm text-secondary font-semibold">0.74</span>
                   </div>
                   <div>
-                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">Inertia</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">{t('aiAnalysis.inertia')}</span>
                     <span className="font-data-mono text-headline-sm text-on-surface font-semibold">184.2</span>
                   </div>
                 </div>
@@ -486,9 +553,9 @@ export const AIAnalysis: React.FC = () => {
                   <div className="flex justify-between items-center text-on-surface-variant font-label-sm text-xs z-10">
                     <span className="flex items-center gap-1 font-semibold text-on-surface-variant">
                       <span className="material-symbols-outlined text-[14px]">thermostat</span>
-                      Ambient Temperature (°C) [Y-axis: 18°C – 36°C]
+                      {t('aiAnalysis.ambientTemperatureAxis', 'Ambient Temperature (°C) [Y-axis: 18°C – 36°C]')}
                     </span>
-                    <span className="font-data-mono text-xs text-on-surface-variant">Convergence: 8 Iterations</span>
+                    <span className="font-data-mono text-xs text-on-surface-variant">{t('aiAnalysis.convergence', { count: formatNumber(8) })}</span>
                   </div>
 
                   {/* SVG Cluster Boundaries & Axis Grids */}
@@ -510,48 +577,54 @@ export const AIAnalysis: React.FC = () => {
                   <div className="relative w-full h-full grid grid-cols-12 grid-rows-6 pointer-events-auto z-10">
                     <div className="col-start-3 row-start-2 flex items-center gap-1.5 cursor-pointer group">
                       <span className="w-3 h-3 rounded-full bg-secondary shadow-sm ring-2 ring-surface-container-lowest"></span>
-                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-semibold shadow-xs">A-1 (56%, 22°)</span>
+                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-semibold shadow-xs">{t('aiAnalysis.scatterPoint', '{point} ({moisture}%, {temperature}°)', { point: 'A-1', moisture: formatNumber(56), temperature: formatNumber(22) })}</span>
                     </div>
 
                     <div className="col-start-4 row-start-3 flex items-center gap-1.5 cursor-pointer group">
                       <span className="w-3 h-3 rounded-full bg-secondary shadow-sm ring-2 ring-surface-container-lowest"></span>
-                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-semibold shadow-xs">A-2 (54%, 23°)</span>
+                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-semibold shadow-xs">{t('aiAnalysis.scatterPoint', '{point} ({moisture}%, {temperature}°)', { point: 'A-2', moisture: formatNumber(54), temperature: formatNumber(23) })}</span>
                     </div>
 
                     <div className="col-start-3 row-start-3 flex items-center gap-1.5 cursor-pointer group">
                       <span className="w-3.5 h-3.5 rounded-full bg-primary-container text-on-primary text-[8px] flex items-center justify-center font-bold">★</span>
-                      <span className="font-data-mono text-[11px] text-on-surface-variant">Centroid 0</span>
+                      <span className="font-data-mono text-[11px] text-on-surface-variant">{t('aiAnalysis.centroid', 'Centroid {cluster}', { cluster: formatNumber(0) })}</span>
                     </div>
 
                     <div className="col-start-9 row-start-2 flex items-center gap-1.5 cursor-pointer group">
                       <span className="w-3 h-3 rounded-full bg-surface-tint shadow-sm ring-2 ring-surface-container-lowest"></span>
-                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-semibold shadow-xs">D-1 (78%, 21°)</span>
+                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-semibold shadow-xs">{t('aiAnalysis.scatterPoint', '{point} ({moisture}%, {temperature}°)', { point: 'D-1', moisture: formatNumber(78), temperature: formatNumber(21) })}</span>
                     </div>
 
                     <div className="col-start-8 row-start-5 flex items-center gap-1.5 cursor-pointer group animate-pulse">
                       <span className="w-3.5 h-3.5 rounded-full bg-tertiary-container shadow-sm ring-2 ring-surface-container-lowest"></span>
                       <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-on-surface font-bold text-tertiary shadow-xs">
-                        {selectedField ? `${selectedField.name} (${currentMoisture}%, ${currentTemp}°)` : 'Selected Field'}
+                        {selectedField
+                          ? t('aiAnalysis.selectedFieldReading', '{field} ({moisture}%, {temperature}°)', {
+                              field: selectedField.name,
+                              moisture: formatNumber(currentMoisture, { maximumFractionDigits: 1 }),
+                              temperature: formatNumber(currentTemp, { maximumFractionDigits: 1 }),
+                            })
+                          : selectedFieldLabel}
                       </span>
                     </div>
 
                     <div className="col-start-9 row-start-4 flex items-center gap-1.5">
                       <span className="w-3.5 h-3.5 rounded-full bg-primary-container text-on-primary text-[8px] flex items-center justify-center font-bold">★</span>
-                      <span className="font-data-mono text-[11px] text-on-surface-variant">Centroid 2</span>
+                      <span className="font-data-mono text-[11px] text-on-surface-variant">{t('aiAnalysis.centroid', 'Centroid {cluster}', { cluster: formatNumber(2) })}</span>
                     </div>
 
                     <div className="col-start-2 row-start-5 flex items-center gap-1.5 cursor-pointer group">
                       <span className="w-3.5 h-3.5 rounded-full bg-error shadow-sm ring-2 ring-surface-container-lowest"></span>
-                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-error font-bold shadow-xs">S-9 Outlier (12%, 34°)</span>
+                      <span className="font-data-mono text-[11px] bg-surface-container-lowest/90 px-1 rounded text-error font-bold shadow-xs">{t('aiAnalysis.scatterOutlier', 'S-9 Outlier ({moisture}%, {temperature}°)', { moisture: formatNumber(12), temperature: formatNumber(34) })}</span>
                     </div>
                   </div>
 
                   <div className="flex justify-between items-center text-on-surface-variant font-label-sm text-xs pt-space-xs z-10 border-t border-outline-variant/20">
                     <span className="flex items-center gap-1 font-semibold text-on-surface-variant">
                       <span className="material-symbols-outlined text-[14px]">water_drop</span>
-                      Soil Moisture Volume % [X-axis: 0% – 100%]
+                      {t('aiAnalysis.soilMoistureAxis', 'Soil Moisture Volume % [X-axis: 0% – 100%]')}
                     </span>
-                    <span className="font-label-sm text-xs text-on-surface-variant">Normalized scale • Euclidean distance metric</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('aiAnalysis.normalizedScale', 'Normalized scale • Euclidean distance metric')}</span>
                   </div>
                 </div>
 
@@ -560,37 +633,37 @@ export const AIAnalysis: React.FC = () => {
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-secondary"></span>
-                      <span className="font-label-sm text-xs font-semibold text-on-surface">Cluster 0: Optimal</span>
+                      <span className="font-label-sm text-xs font-semibold text-on-surface">{t('aiAnalysis.clusterOptimal')}</span>
                     </div>
-                    <span className="font-label-sm text-xs text-on-surface-variant">5 Fields (A-1, A-2, A-3, B-1, E-2)</span>
-                    <span className="font-data-mono text-xs text-secondary">Loss: 0.041</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('common.fields', { count: formatNumber(5) })} (A-1, A-2, A-3, B-1, E-2)</span>
+                    <span className="font-data-mono text-xs text-secondary">{t('aiAnalysis.clusterLoss', 'Loss: {value}', { value: formatNumber(0.041, { minimumFractionDigits: 3 }) })}</span>
                   </div>
 
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-surface-tint"></span>
-                      <span className="font-label-sm text-xs font-semibold text-on-surface">Cluster 1: Cool/High-H₂O</span>
+                      <span className="font-label-sm text-xs font-semibold text-on-surface">{t('aiAnalysis.clusterCool')}</span>
                     </div>
-                    <span className="font-label-sm text-xs text-on-surface-variant">3 Fields (D-1, D-2, D-3)</span>
-                    <span className="font-data-mono text-xs text-on-surface-variant">Loss: 0.052</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('common.fields', { count: formatNumber(3) })} (D-1, D-2, D-3)</span>
+                    <span className="font-data-mono text-xs text-on-surface-variant">{t('aiAnalysis.clusterLoss', 'Loss: {value}', { value: formatNumber(0.052, { minimumFractionDigits: 3 }) })}</span>
                   </div>
 
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-tertiary"></span>
-                      <span className="font-label-sm text-xs font-semibold text-on-surface">Cluster 2: Thermal Stress</span>
+                      <span className="font-label-sm text-xs font-semibold text-on-surface">{t('aiAnalysis.clusterStress')}</span>
                     </div>
-                    <span className="font-label-sm text-xs text-on-surface-variant">3 Fields ({selectedField?.name || 'Selected'}, B-2, F-1)</span>
-                    <span className="font-data-mono text-xs text-error">Stress Delta +18%</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('common.fields', { count: formatNumber(3) })} ({selectedField?.name || selectedFieldLabel}, B-2, F-1)</span>
+                    <span className="font-data-mono text-xs text-error">{t('aiAnalysis.stressDelta', 'Stress Delta +{value}%', { value: formatNumber(18) })}</span>
                   </div>
 
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2.5 h-2.5 rounded-full bg-error"></span>
-                      <span className="font-label-sm text-xs font-semibold text-error">Cluster 3: Sensor Fault</span>
+                      <span className="font-label-sm text-xs font-semibold text-error">{t('aiAnalysis.clusterFault')}</span>
                     </div>
-                    <span className="font-label-sm text-xs text-on-surface-variant">1 Node (S-9 Sector West)</span>
-                    <span className="font-data-mono text-xs text-error">Deviation 3.2σ</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('aiAnalysis.nodeSector', '1 Node ({sector})', { sector: 'S-9 Sector West' })}</span>
+                    <span className="font-data-mono text-xs text-error">{t('aiAnalysis.deviation', 'Deviation {value}σ', { value: formatNumber(3.2, { maximumFractionDigits: 1 }) })}</span>
                   </div>
                 </div>
 
@@ -599,13 +672,16 @@ export const AIAnalysis: React.FC = () => {
                   <span className="material-symbols-outlined text-secondary text-[22px] shrink-0 mt-0.5">psychology</span>
                   <div className="flex flex-col gap-space-xs">
                     <div className="flex items-center gap-space-xs">
-                      <span className="font-headline-sm text-headline-sm text-on-surface">Agronomic Insight</span>
+                      <span className="font-headline-sm text-headline-sm text-on-surface">{t('aiAnalysis.agronomicInsight')}</span>
                       <span className="font-label-sm text-xs px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-mono">
-                        CONF: 97.1%
+                        {t('diseaseDetection.confidence', { value: formatNumber(97.1, { maximumFractionDigits: 1 }) })}
                       </span>
                     </div>
                     <p className="font-body-md text-body-md text-on-surface-variant">
-                      Fields in <strong className="text-on-surface font-semibold">Cluster 2 ({selectedField?.name || 'Selected Field'})</strong> exhibit localized moisture stress ({currentMoisture}%) requiring prioritized scheduling. Cross-referencing vapor pressure deficit confirms transpiration exhaustion in {selectedField?.crop || 'crop'} blocks.
+                      {t('aiAnalysis.insightText', {
+                        field: selectedField?.name || selectedFieldLabel,
+                        moisture: formatNumber(currentMoisture, { maximumFractionDigits: 1 }),
+                      })}
                     </p>
                   </div>
                 </div>
@@ -626,31 +702,31 @@ export const AIAnalysis: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center gap-space-xs">
-                      <h2 className="font-headline-sm text-headline-sm text-on-surface">Crop Action Recommendation</h2>
+                      <h2 className="font-headline-sm text-headline-sm text-on-surface">{t('aiAnalysis.recommendationTitle')}</h2>
                     </div>
-                    <span className="font-label-md text-xs text-on-surface-variant">Explainable Decision Tree • Rule ID: AGR-DT-402</span>
+                    <span className="font-label-md text-xs text-on-surface-variant">{t('aiAnalysis.decisionTreeMeta')}</span>
                   </div>
                 </div>
                 <span className="px-space-xs py-1 rounded bg-secondary-container text-on-secondary-container font-label-sm text-xs font-semibold">
-                  94.6% Conf
+                  {t('diseaseDetection.confidence', { value: formatNumber(94.6, { maximumFractionDigits: 1 }) })}
                 </span>
               </div>
 
               <div className="p-space-lg flex flex-col gap-space-lg flex-1 justify-between">
                 <div className="flex flex-col gap-space-md">
                   <span className="font-label-sm text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Active Inference Evaluation Tree ({selectedField?.name || 'Target Field'})
+                    {t('aiAnalysis.evaluationTree', { field: selectedField?.name || targetFieldLabel })}
                   </span>
 
                   <div className="flex flex-col gap-space-xs relative">
                     {/* Node 0 */}
                     <div className="p-space-sm rounded-lg bg-surface-container-low flex items-center justify-between border border-outline-variant/20">
                       <div className="flex items-center gap-space-sm">
-                        <span className="font-data-mono text-xs px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-semibold">Node 0</span>
-                        <span className="font-body-md text-sm text-on-surface">Soil Moisture &lt; 45%</span>
+                        <span className="font-data-mono text-xs px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-semibold">{t('aiAnalysis.node0')}</span>
+                        <span className="font-body-md text-sm text-on-surface">{t('aiAnalysis.soilMoistureRule')}</span>
                       </div>
                       <span className="font-data-mono text-xs text-secondary font-semibold">
-                        {currentMoisture}% ({isMoistureLow ? 'TRUE' : 'FALSE'})
+                          {formatNumber(currentMoisture, { maximumFractionDigits: 1 })}% ({isMoistureLow ? 'TRUE' : 'FALSE'})
                       </span>
                     </div>
 
@@ -661,11 +737,11 @@ export const AIAnalysis: React.FC = () => {
                       </div>
                       <div className="p-space-sm rounded-lg bg-surface-container-low flex items-center justify-between border border-outline-variant/20">
                         <div className="flex items-center gap-space-sm">
-                          <span className="font-data-mono text-xs px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-semibold">Node 1</span>
-                          <span className="font-body-md text-sm text-on-surface">Rain forecast &lt; 5mm in 48h?</span>
+                          <span className="font-data-mono text-xs px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-semibold">{t('aiAnalysis.node1')}</span>
+                          <span className="font-body-md text-sm text-on-surface">{t('aiAnalysis.rainRule')}</span>
                         </div>
                         <span className="font-data-mono text-xs text-secondary font-semibold">
-                          {currentRain}mm ({isRainLow ? 'TRUE' : 'FALSE'})
+                          {formatNumber(currentRain, { maximumFractionDigits: 1 })}mm ({isRainLow ? 'TRUE' : 'FALSE'})
                         </span>
                       </div>
 
@@ -676,16 +752,18 @@ export const AIAnalysis: React.FC = () => {
                         </div>
                         <div className="p-space-sm rounded-lg bg-secondary-container text-on-secondary-container flex flex-col gap-1 shadow-xs border border-secondary/30">
                           <div className="flex items-center justify-between">
-                            <span className="font-label-sm text-xs uppercase tracking-wider font-bold">Terminal Action Triggered</span>
+                            <span className="font-label-sm text-xs uppercase tracking-wider font-bold">{t('aiAnalysis.terminalAction')}</span>
                             <span className="font-label-sm text-xs px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-secondary-container font-semibold">
                               Gini: 0.02
                             </span>
                           </div>
                           <span className="font-headline-sm text-sm font-bold">
-                            {isMoistureLow ? `Initiate 1.5hr cycle on Pump 2` : `Maintain Standard Drip Irrigation`}
+                            {isMoistureLow
+                              ? t('common.enums.recommendations.initiatePumpCycle')
+                              : t('common.enums.recommendations.maintainStandardDripIrrigation')}
                           </span>
                           <span className="font-label-sm text-xs opacity-90">
-                            Target parcel: {selectedField?.name || 'Field C-4'} • Flow: 420 L/min
+                            {t('aiAnalysis.targetParcel', { field: selectedField?.name || 'Field C-4' })}
                           </span>
                         </div>
                       </div>
@@ -696,12 +774,12 @@ export const AIAnalysis: React.FC = () => {
                 {/* Feature Importance Bars (Section 16 Requirement) */}
                 <div className="flex flex-col gap-space-sm pt-space-xs border-t border-outline-variant/20">
                   <span className="font-label-sm text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Gini Feature Importance (SHAP-aligned)
+                    {t('aiAnalysis.featureImportance')}
                   </span>
                   <div className="flex flex-col gap-space-xs">
                     <div>
                       <div className="flex justify-between font-label-sm text-xs text-on-surface mb-1">
-                        <span>Soil Moisture (0-30cm)</span>
+                        <span>{t('aiAnalysis.soilMoistureDepth')}</span>
                         <span className="font-data-mono">0.42</span>
                       </div>
                       <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
@@ -711,7 +789,7 @@ export const AIAnalysis: React.FC = () => {
 
                     <div>
                       <div className="flex justify-between font-label-sm text-xs text-on-surface mb-1">
-                        <span>Evapotranspiration Rate (ET₀)</span>
+                        <span>{t('aiAnalysis.evapotranspirationRate')}</span>
                         <span className="font-data-mono">0.28</span>
                       </div>
                       <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
@@ -721,7 +799,7 @@ export const AIAnalysis: React.FC = () => {
 
                     <div>
                       <div className="flex justify-between font-label-sm text-xs text-on-surface mb-1">
-                        <span>Soil Temperature</span>
+                        <span>{t('aiAnalysis.soilTemperature')}</span>
                         <span className="font-data-mono">0.18</span>
                       </div>
                       <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
@@ -731,7 +809,7 @@ export const AIAnalysis: React.FC = () => {
 
                     <div>
                       <div className="flex justify-between font-label-sm text-xs text-on-surface mb-1">
-                        <span>Normalized Canopy Index (NDVI)</span>
+                        <span>{t('aiAnalysis.canopyIndex')}</span>
                         <span className="font-data-mono">0.12</span>
                       </div>
                       <div className="h-2 w-full bg-surface-container-low rounded-full overflow-hidden">
@@ -743,14 +821,14 @@ export const AIAnalysis: React.FC = () => {
 
                 {/* Execute Rule Button (Section 15 Requirement) */}
                 <div className="flex items-center justify-between pt-space-sm border-t border-outline-variant/20">
-                  <span className="font-label-sm text-xs text-on-surface-variant">Validated on 1,420 historical harvest cycles</span>
+                  <span className="font-label-sm text-xs text-on-surface-variant">{t('aiAnalysis.validatedCycles')}</span>
                   <button
                     type="button"
                     disabled={executingModule === 'rules'}
                     onClick={handleExecuteRule}
                     className="px-space-md py-space-xs rounded-lg bg-primary text-on-primary font-label-md text-xs font-semibold hover:bg-primary-container transition-colors flex items-center gap-1 shadow-sm cursor-pointer disabled:opacity-50"
                   >
-                    <span>{executingModule === 'rules' ? 'Executing Rule...' : 'Execute Rule'}</span>
+                    <span>{executingModule === 'rules' ? t('aiAnalysis.executingRule') : t('aiAnalysis.executeRule')}</span>
                     <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                   </button>
                 </div>
@@ -771,13 +849,13 @@ export const AIAnalysis: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center gap-space-xs">
-                      <h2 className="font-headline-sm text-headline-sm text-on-surface">Constraint Satisfaction &amp; Consistency</h2>
+                      <h2 className="font-headline-sm text-headline-sm text-on-surface">{t('aiAnalysis.cspTitle')}</h2>
                     </div>
-                    <span className="font-label-md text-xs text-on-surface-variant">CSP Solver with AC-3 Arc Consistency Validation</span>
+                    <span className="font-label-md text-xs text-on-surface-variant">{t('aiAnalysis.cspDescription')}</span>
                   </div>
                 </div>
                 <span className="font-label-sm text-xs px-space-xs py-1 rounded bg-surface-container text-on-surface font-semibold">
-                  Feasible Domain: 3/24
+                  {t('aiAnalysis.feasibleDomain')}
                 </span>
               </div>
 
@@ -785,34 +863,34 @@ export const AIAnalysis: React.FC = () => {
                 {/* 3 Operational Constraint Cards */}
                 <div className="flex flex-col gap-space-xs">
                   <span className="font-label-sm text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Active Operational Constraints (Hard &amp; Soft)
+                    {t('aiAnalysis.activeConstraints')}
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-sm">
                     <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                       <div className="flex items-center justify-between">
-                        <span className="font-label-sm text-xs font-semibold text-on-surface">Pump Concurrency</span>
+                        <span className="font-label-sm text-xs font-semibold text-on-surface">{t('aiAnalysis.pumpConcurrency')}</span>
                         <span className="material-symbols-outlined text-secondary text-[16px]">lock</span>
                       </div>
-                      <span className="font-headline-sm text-sm text-on-surface font-semibold">Max 2 Units</span>
-                      <span className="font-label-sm text-[11px] text-on-surface-variant">Avoid hydraulic surge</span>
+                      <span className="font-headline-sm text-sm text-on-surface font-semibold">{t('aiAnalysis.maxTwoUnits')}</span>
+                      <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.avoidHydraulicSurge')}</span>
                     </div>
 
                     <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                       <div className="flex items-center justify-between">
-                        <span className="font-label-sm text-xs font-semibold text-on-surface">Tariff Exclusion</span>
+                        <span className="font-label-sm text-xs font-semibold text-on-surface">{t('aiAnalysis.tariffExclusion')}</span>
                         <span className="material-symbols-outlined text-tertiary text-[16px]">bolt</span>
                       </div>
                       <span className="font-headline-sm text-sm text-on-surface font-semibold">12:00 – 16:00</span>
-                      <span className="font-label-sm text-[11px] text-on-surface-variant">Peak $0.34/kWh window</span>
+                      <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.peakTariff')}</span>
                     </div>
 
                     <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-1 border border-outline-variant/20">
                       <div className="flex items-center justify-between">
-                        <span className="font-label-sm text-xs font-semibold text-on-surface">Head Pressure</span>
+                        <span className="font-label-sm text-xs font-semibold text-on-surface">{t('aiAnalysis.headPressure')}</span>
                         <span className="material-symbols-outlined text-secondary text-[16px]">speed</span>
                       </div>
                       <span className="font-headline-sm text-sm text-on-surface font-semibold">&gt; 42 PSI</span>
-                      <span className="font-label-sm text-[11px] text-on-surface-variant">Minimum nozzle atomization</span>
+                      <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.minimumAtomization')}</span>
                     </div>
                   </div>
                 </div>
@@ -821,9 +899,9 @@ export const AIAnalysis: React.FC = () => {
                 <div className="flex flex-col gap-space-xs">
                   <div className="flex items-center justify-between">
                     <span className="font-label-sm text-xs text-on-surface-variant uppercase tracking-wider font-semibold">
-                      24-Hour Domain Arc Pruning (AC-3)
+                      {t('aiAnalysis.domainPruning')}
                     </span>
-                    <span className="font-data-mono text-xs text-secondary font-semibold">AC-3 Steps: 46 arc checks</span>
+                    <span className="font-data-mono text-xs text-secondary font-semibold">{t('aiAnalysis.ac3Steps', 'AC-3 Steps: {count} arc checks', { count: formatNumber(46) })}</span>
                   </div>
 
                   <div className="grid grid-cols-6 sm:grid-cols-12 gap-1 p-space-sm bg-surface-container-low rounded-lg text-center font-data-mono text-xs">
@@ -833,8 +911,8 @@ export const AIAnalysis: React.FC = () => {
                     <div className="p-1 rounded bg-secondary-container text-on-secondary-container font-bold shadow-xs ring-1 ring-secondary">06h</div>
                     <div className="p-1 rounded bg-surface-container text-on-surface-variant line-through opacity-50">08h</div>
                     <div className="p-1 rounded bg-surface-container text-on-surface-variant line-through opacity-50">10h</div>
-                    <div className="p-1 rounded bg-error-container text-error line-through font-semibold" title="Peak Tariff Exclusion">12h</div>
-                    <div className="p-1 rounded bg-error-container text-error line-through font-semibold" title="Peak Tariff Exclusion">14h</div>
+                    <div className="p-1 rounded bg-error-container text-error line-through font-semibold" title={t('aiAnalysis.tariffExclusion')}>12h</div>
+                    <div className="p-1 rounded bg-error-container text-error line-through font-semibold" title={t('aiAnalysis.tariffExclusion')}>14h</div>
                     <div className="p-1 rounded bg-surface-container text-on-surface-variant line-through opacity-50">16h</div>
                     <div className="p-1 rounded bg-surface-container text-on-surface-variant line-through opacity-50">18h</div>
                     <div className="p-1 rounded bg-secondary-container text-on-secondary-container font-bold shadow-xs ring-1 ring-secondary">20h</div>
@@ -842,9 +920,9 @@ export const AIAnalysis: React.FC = () => {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-space-md text-[11px] text-on-surface-variant px-space-xs pt-1">
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-secondary"></span> Feasible Solution Window</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-error"></span> Tariff Lockout</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-outline-variant"></span> Pressure/Overlap Violation</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-secondary"></span> {t('aiAnalysis.feasibleWindow')}</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-error"></span> {t('aiAnalysis.tariffLockout')}</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-outline-variant"></span> {t('aiAnalysis.pressureViolation')}</span>
                   </div>
                 </div>
 
@@ -853,8 +931,8 @@ export const AIAnalysis: React.FC = () => {
                   <div className="flex items-center gap-space-sm">
                     <span className="material-symbols-outlined text-secondary text-[20px]">check_circle</span>
                     <div className="flex flex-col">
-                      <span className="font-label-md text-xs font-semibold">Optimal Global Schedule Found</span>
-                      <span className="font-label-sm text-[11px] text-on-surface-variant">Slot: 04:30 - 06:00 • Cost minimization index: 0.93</span>
+                      <span className="font-label-md text-xs font-semibold">{t('aiAnalysis.optimalScheduleFound')}</span>
+                      <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.scheduleSlot', 'Slot: 04:30 - 06:00 • Cost minimization index: {value}', { value: formatNumber(0.93, { minimumFractionDigits: 2 }) })}</span>
                     </div>
                   </div>
                   <button
@@ -863,7 +941,7 @@ export const AIAnalysis: React.FC = () => {
                     onClick={handleCommitPlan}
                     className="px-space-md py-space-xs rounded-lg bg-surface-container-lowest text-on-surface font-label-md text-xs font-semibold hover:bg-surface-container transition-colors shadow-sm cursor-pointer border border-outline-variant/30 disabled:opacity-50"
                   >
-                    {executingModule === 'csp' ? 'Committing...' : 'Commit Plan'}
+                    {executingModule === 'csp' ? t('aiAnalysis.committing') : t('aiAnalysis.commitPlan')}
                   </button>
                 </div>
               </div>
@@ -883,18 +961,18 @@ export const AIAnalysis: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center gap-space-xs">
-                      <h2 className="font-headline-sm text-headline-sm text-on-surface">Autonomous Equipment Navigation</h2>
+                      <h2 className="font-headline-sm text-headline-sm text-on-surface">{t('aiAnalysis.navigationTitle')}</h2>
                     </div>
-                    <span className="font-label-md text-xs text-on-surface-variant">A* Pathfinding • Tractor Unit T-1</span>
+                    <span className="font-label-md text-xs text-on-surface-variant">{t('aiAnalysis.navigationDescription')}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-space-sm text-right">
                   <div>
-                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">Path Distance</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">{t('aiAnalysis.pathDistance')}</span>
                     <span className="font-data-mono text-headline-sm text-on-surface font-semibold">840 m</span>
                   </div>
                   <div>
-                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">Fuel Saved</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant block uppercase tracking-wider">{t('aiAnalysis.fuelSaved')}</span>
                     <span className="font-data-mono text-headline-sm text-secondary font-semibold">14.2%</span>
                   </div>
                 </div>
@@ -912,12 +990,11 @@ export const AIAnalysis: React.FC = () => {
 
                     {/* Mud/Obstacle Box */}
                     <rect className="fill-surface-dim/70 stroke-outline-variant/40" height="70" rx="6" width="90" x="180" y="40" />
-                    <text className="fill-on-surface-variant font-data-mono text-[10px]" x="188" y="75">Sector B: Mud /</text>
-                    <text className="fill-on-surface-variant font-data-mono text-[10px]" x="188" y="88">High Sinkage</text>
+                    <text className="fill-on-surface-variant font-data-mono text-[10px]" x="188" y="75">Sector B: {t('aiAnalysis.highSinkage')}</text>
 
                     {/* Trench Line */}
                     <path className="opacity-70" d="M 120 150 L 360 150" stroke="#ba1a1a" strokeDasharray="6 4" strokeLinecap="round" strokeWidth="4" />
-                    <text className="fill-error font-data-mono text-[10px]" x="200" y="165">Active Irrigation Trench</text>
+                    <text className="fill-error font-data-mono text-[10px]" x="200" y="165">{t('aiAnalysis.activeTrench')}</text>
 
                     {/* A* Calculated Path Line */}
                     <path d="M 50 160 L 130 110 L 160 30 L 320 25 L 420 80 L 440 140" stroke="#296b3c" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
@@ -927,19 +1004,19 @@ export const AIAnalysis: React.FC = () => {
 
                   <div className="relative z-10 flex justify-between items-start">
                     <span className="font-data-mono text-xs px-2 py-0.5 rounded bg-surface-container-lowest/90 text-on-surface font-semibold shadow-xs">
-                      Origin: Central Depot [04, 12]
+                      {t('aiAnalysis.origin')}
                     </span>
                     <span className="font-data-mono text-xs px-2 py-0.5 rounded bg-surface-container-lowest/90 text-secondary font-semibold shadow-xs">
-                      Target: {selectedField?.name || 'Field C-4'} Headland
+                      {t('aiAnalysis.targetHeadland', { field: selectedField?.name || 'Field C-4' })}
                     </span>
                   </div>
 
                   <div className="relative z-10 flex justify-between items-end">
                     <span className="font-label-sm text-xs px-2 py-0.5 rounded bg-surface-container-lowest/80 text-on-surface-variant">
-                      Heuristic: h(n) = Euclidean + Slip Cost (C_soil)
+                      {t('aiAnalysis.heuristicDescription', 'Heuristic: h(n) = Euclidean + Slip Cost (C_soil)')}
                     </span>
                     <span className="font-label-sm text-xs text-secondary font-semibold bg-surface-container-lowest/90 px-2 py-0.5 rounded">
-                      Avoidance Succeeded: 2 Obstacles
+                      {t('aiAnalysis.avoidanceSucceeded')}
                     </span>
                   </div>
                 </div>
@@ -947,21 +1024,21 @@ export const AIAnalysis: React.FC = () => {
                 {/* Route Metrics Cards */}
                 <div className="grid grid-cols-3 gap-space-sm text-on-surface">
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col border border-outline-variant/20">
-                    <span className="font-label-sm text-xs text-on-surface-variant">Explored Nodes</span>
-                    <span className="font-data-mono text-headline-sm font-semibold">124</span>
-                    <span className="font-label-sm text-[11px] text-on-surface-variant">Closed list count</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('aiAnalysis.exploredNodes')}</span>
+                    <span className="font-data-mono text-headline-sm font-semibold">{formatNumber(124)}</span>
+                    <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.closedList')}</span>
                   </div>
 
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col border border-outline-variant/20">
-                    <span className="font-label-sm text-xs text-on-surface-variant">Soil Trafficability</span>
-                    <span className="font-data-mono text-headline-sm text-secondary font-semibold">91.4%</span>
-                    <span className="font-label-sm text-[11px] text-on-surface-variant">Safe traction ratio</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('aiAnalysis.soilTrafficability')}</span>
+                    <span className="font-data-mono text-headline-sm text-secondary font-semibold">{formatNumber(91.4, { maximumFractionDigits: 1 })}%</span>
+                    <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.safeTraction')}</span>
                   </div>
 
                   <div className="p-space-sm rounded-lg bg-surface-container-low flex flex-col border border-outline-variant/20">
-                    <span className="font-label-sm text-xs text-on-surface-variant">Transit Duration</span>
-                    <span className="font-data-mono text-headline-sm font-semibold">4.8 min</span>
-                    <span className="font-label-sm text-[11px] text-on-surface-variant">@ 12 km/h autonomous</span>
+                    <span className="font-label-sm text-xs text-on-surface-variant">{t('aiAnalysis.transitDuration')}</span>
+                    <span className="font-data-mono text-headline-sm font-semibold">{formatNumber(4.8, { maximumFractionDigits: 1 })} min</span>
+                    <span className="font-label-sm text-[11px] text-on-surface-variant">{t('aiAnalysis.autonomousSpeed')}</span>
                   </div>
                 </div>
 
@@ -969,7 +1046,7 @@ export const AIAnalysis: React.FC = () => {
                 <div className="flex items-center justify-between pt-space-xs border-t border-outline-variant/20">
                   <div className="flex items-center gap-1.5 text-xs text-on-surface-variant">
                     <span className="material-symbols-outlined text-[16px] text-secondary">satellite_alt</span>
-                    <span>RTK-GPS Differential Correction ±2cm</span>
+                    <span>{t('aiAnalysis.rtkCorrection', 'RTK-GPS Differential Correction ±2cm')}</span>
                   </div>
                   <button
                     type="button"
@@ -977,7 +1054,7 @@ export const AIAnalysis: React.FC = () => {
                     onClick={handleTransmitRoute}
                     className="px-space-md py-space-xs rounded-lg bg-secondary text-on-secondary font-label-md text-xs font-semibold hover:bg-secondary/90 transition-colors shadow-sm flex items-center gap-1 cursor-pointer disabled:opacity-50"
                   >
-                    <span>{executingModule === 'astar' ? 'Transmitting...' : 'Transmit Route to T-1'}</span>
+                    <span>{executingModule === 'astar' ? t('aiAnalysis.transmitting') : t('aiAnalysis.transmitRoute')}</span>
                     <span className="material-symbols-outlined text-[16px]">send</span>
                   </button>
                 </div>
@@ -990,12 +1067,12 @@ export const AIAnalysis: React.FC = () => {
         <section className="flex flex-col bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/30 p-space-lg gap-space-md">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
             <div>
-              <h2 className="font-headline-sm text-headline-sm text-on-surface">Integrated Diagnostic &amp; Pipeline Telemetry Logs</h2>
-              <p className="font-body-md text-body-md text-on-surface-variant">Live event stream across classical reasoning algorithms and tensor models</p>
+              <h2 className="font-headline-sm text-headline-sm text-on-surface">{t('aiAnalysis.telemetryTitle')}</h2>
+              <p className="font-body-md text-body-md text-on-surface-variant">{t('aiAnalysis.telemetryDescription')}</p>
             </div>
             <div className="flex items-center gap-space-xs font-data-mono text-xs text-on-surface-variant">
               <span className="w-2 h-2 rounded-full bg-secondary"></span>
-              <span>Telemetry Stream Synchronized: Just Now</span>
+              <span>{t('aiAnalysis.streamSynchronized')}</span>
             </div>
           </div>
 
@@ -1003,19 +1080,19 @@ export const AIAnalysis: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-container-low text-on-surface-variant font-label-sm text-xs uppercase tracking-wider border-b border-outline-variant/30">
-                  <th className="py-space-xs px-space-md font-semibold">Timestamp</th>
-                  <th className="py-space-xs px-space-md font-semibold">Model Pipeline</th>
-                  <th className="py-space-xs px-space-md font-semibold">Event Description</th>
-                  <th className="py-space-xs px-space-md font-semibold">Convergence / Status</th>
-                  <th className="py-space-xs px-space-md font-semibold text-right">Inference Delta</th>
+                  <th className="py-space-xs px-space-md font-semibold">{t('aiAnalysis.timestamp')}</th>
+                  <th className="py-space-xs px-space-md font-semibold">{t('aiAnalysis.modelPipeline')}</th>
+                  <th className="py-space-xs px-space-md font-semibold">{t('aiAnalysis.eventDescription')}</th>
+                  <th className="py-space-xs px-space-md font-semibold">{t('aiAnalysis.convergenceStatus')}</th>
+                  <th className="py-space-xs px-space-md font-semibold text-right">{t('aiAnalysis.inferenceDelta')}</th>
                 </tr>
               </thead>
               <tbody className="font-body-sm text-xs text-on-surface divide-y divide-outline-variant/20">
                 {telemetryLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-surface-container-low/50 transition-colors">
                     <td className="py-space-sm px-space-md font-data-mono text-xs text-on-surface-variant">{log.timestamp}</td>
-                    <td className="py-space-sm px-space-md font-semibold">{log.pipeline}</td>
-                    <td className="py-space-sm px-space-md">{log.description}</td>
+                    <td className="py-space-sm px-space-md font-semibold">{localizeTelemetryText(log.pipeline)}</td>
+                    <td className="py-space-sm px-space-md">{localizeTelemetryText(log.description)}</td>
                     <td className="py-space-sm px-space-md">
                       <span
                         className={`px-2 py-0.5 rounded font-label-sm text-xs font-semibold ${
@@ -1028,7 +1105,7 @@ export const AIAnalysis: React.FC = () => {
                             : 'bg-error-container text-on-error-container'
                         }`}
                       >
-                        {log.status}
+                        {translateEnum('status', log.status, log.status)}
                       </span>
                     </td>
                     <td className="py-space-sm px-space-md font-data-mono text-right text-xs">{log.delta}</td>

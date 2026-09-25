@@ -1,10 +1,26 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="theme-color" content="#f8f9ff" />
+    <title>AgroAI — Smart Agriculture Intelligence</title>
+    <script>
+      (() => {
+        try {
+          const language = window.localStorage.getItem('agroai-language');
+          if (language === 'bn') document.documentElement.lang = 'bn';
+          const theme = window.localStorage.getItem('agroai-theme');
+          if (theme === 'dark') {
+            document.documentElement.dataset.theme = 'dark';
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          }
+        } catch {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
