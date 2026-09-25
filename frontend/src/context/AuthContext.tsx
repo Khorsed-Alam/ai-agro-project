@@ -33,39 +33,39 @@ export interface AuthContextValue {
 
 // ─── Error Code Mapping ────────────────────────────────────────────────────────
 
-function mapFirebaseError(code: string): string {
+function mapFirebaseErrorKey(code: string): string {
   switch (code) {
     case 'auth/email-already-in-use':
-      return 'This email is already registered. Please log in instead.';
+      return 'errors.emailAlreadyRegistered';
     case 'auth/invalid-email':
-      return 'Please enter a valid email address.';
+      return 'validation.emailInvalid';
     case 'auth/weak-password':
-      return 'Password must be at least 8 characters.';
+      return 'validation.passwordLength';
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
-      return 'Email or password is incorrect. Please try again.';
+      return 'errors.invalidCredentials';
     case 'auth/user-not-found':
-      return 'No account was found with this email address.';
+      return 'errors.accountNotFound';
     case 'auth/too-many-requests':
-      return 'Too many attempts. Please wait a moment and try again.';
+      return 'errors.tooManyAttempts';
     case 'auth/network-request-failed':
-      return 'Network error. Please check your internet connection.';
+      return 'errors.network';
     case 'auth/user-disabled':
-      return 'This account has been disabled. Please contact support.';
+      return 'errors.accountDisabled';
     case 'auth/operation-not-allowed':
-      return 'Email/password login is not enabled. Please contact the administrator.';
+      return 'errors.emailPasswordDisabled';
     default:
-      return 'An unexpected error occurred. Please try again.';
+      return 'errors.unexpected';
   }
 }
 
-function extractFirebaseErrorCode(error: any): string {
+function extractFirebaseErrorKey(error: any): string {
   // Firebase errors have a `code` property like "auth/email-already-in-use"
-  if (error?.code) return mapFirebaseError(error.code);
+  if (error?.code) return mapFirebaseErrorKey(error.code);
   // Fallback: parse from message string
   const match = String(error?.message || '').match(/\(([^)]+)\)/);
-  if (match) return mapFirebaseError(match[1]);
-  return mapFirebaseError('');
+  if (match) return mapFirebaseErrorKey(match[1]);
+  return mapFirebaseErrorKey('');
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────
@@ -164,11 +164,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const result = await authService.loginUser(email, password);
       if (!result.success) {
-        return { success: false, error: extractFirebaseErrorCode({ message: result.error }) };
+        return { success: false, error: extractFirebaseErrorKey({ message: result.error }) };
       }
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: extractFirebaseErrorCode(err) };
+      return { success: false, error: extractFirebaseErrorKey(err) };
     }
   }, [isFirebaseReady]);
 
@@ -192,7 +192,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const result = await authService.registerUser(email, password);
       if (!result.success || !result.user) {
-        return { success: false, error: extractFirebaseErrorCode({ message: result.error }) };
+        return { success: false, error: extractFirebaseErrorKey({ message: result.error }) };
       }
 
       const { user: newUser } = result;
@@ -231,7 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: extractFirebaseErrorCode(err) };
+      return { success: false, error: extractFirebaseErrorKey(err) };
     }
   }, [isFirebaseReady]);
 
@@ -245,13 +245,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ─── sendPasswordReset ───────────────────────────────────────────────────────
   const sendPasswordReset = useCallback(async (email: string) => {
     if (!isFirebaseReady || !auth) {
-      return { success: false, error: 'Firebase is not configured. Please add credentials to frontend/.env' };
+      return { success: false, error: 'auth.firebaseNotConfigured' };
     }
     try {
       await firebaseSendPasswordReset(auth, email);
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: extractFirebaseErrorCode(err) };
+      return { success: false, error: extractFirebaseErrorKey(err) };
     }
   }, [isFirebaseReady]);
 

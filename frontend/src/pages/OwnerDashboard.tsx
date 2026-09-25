@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n';
 import type { GeoPolygon, GeoLineString } from '../components/map/AgroMap';
 import { AgroMap } from '../components/map/AgroMap';
 import type { Farm, Field, FarmerProfile, FieldImageRecord, FieldLandData } from '../services/ecosystem';
@@ -27,9 +28,19 @@ import {
 } from '../services/ecosystem';
 import { evaluateFieldDecision } from '../utils/decisionEngine';
 
+const growthStageTranslationKeys: Record<string, string> = {
+  Germination: 'farmerDashboard.growthStages.germination',
+  'Vegetative Growth': 'farmerDashboard.growthStages.vegetativeGrowth',
+  'Flowering & Tasseling': 'farmerDashboard.growthStages.floweringTasseling',
+  Maturation: 'farmerDashboard.growthStages.maturation',
+};
+
 export const OwnerDashboard: React.FC = () => {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
+  const { t, translateEnum, formatDate, formatNumber } = useI18n();
+  const translateGrowthStage = (value: string) =>
+    t(growthStageTranslationKeys[value] || 'farmerDashboard.growthStage', value || t('common.unknown'));
 
   const [farms, setFarms] = useState<Farm[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
@@ -214,19 +225,19 @@ export const OwnerDashboard: React.FC = () => {
   const handleAssignFarmer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFieldForAssign) {
-      setAssignError('No field selected for assignment.');
+      setAssignError(t('validation.noFieldSelected'));
       return;
     }
 
     const targetId = (selectedFieldForAssign as any).docId || selectedFieldForAssign.fieldId || (selectedFieldForAssign as any).id;
     if (!targetId) {
-      setAssignError('Unable to identify selected field ID.');
+      setAssignError(t('validation.fieldIdMissing'));
       return;
     }
 
     // Validation: check if a worker selection was made
     if (!selectedFarmerId && selectedFarmerId !== '__unassign__') {
-      setAssignError('Please select a worker');
+      setAssignError(t('validation.selectWorker'));
       return;
     }
 
@@ -243,7 +254,7 @@ export const OwnerDashboard: React.FC = () => {
       if (isUnassigning) {
         const success = await assignFarmerToField(targetId, null, null, user?.uid || 'owner_demo');
         if (success) {
-          setAssignSuccess(`Unassigned worker from field ${selectedFieldForAssign.name}.`);
+          setAssignSuccess(t('ownerDashboard.unassignedFromField', 'Unassigned worker from field {name}.', { name: selectedFieldForAssign.name }));
           notifyEcosystemChange();
           await loadEcosystemData();
           setTimeout(() => {
@@ -269,7 +280,7 @@ export const OwnerDashboard: React.FC = () => {
       });
 
       if (res.success) {
-        setAssignSuccess(`Assignment request sent to ${workerName}! Status is Pending until the farmer approves.`);
+        setAssignSuccess(t('ownerDashboard.assignmentRequestSent', 'Assignment request sent to {name}! Status is Pending until the farmer approves.', { name: workerName || '' }));
         notifyEcosystemChange();
         await loadEcosystemData();
         setTimeout(() => {
@@ -279,12 +290,12 @@ export const OwnerDashboard: React.FC = () => {
         }, 1500);
       } else {
         setIsAssigning(false);
-        setAssignError(res.error || 'Failed to send assignment request. Please try again.');
+        setAssignError(t('errors.sendAssignment'));
       }
     } catch (err: any) {
       setIsAssigning(false);
       console.error('Assign worker exception:', err);
-      setAssignError(err?.message || 'Failed to assign worker');
+      setAssignError(t('errors.assignWorker'));
     }
   };
 
@@ -302,15 +313,15 @@ export const OwnerDashboard: React.FC = () => {
         <div className="flex flex-col gap-space-xs">
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary font-label-sm text-xs font-semibold uppercase tracking-wider">
-              Owner Workspace
+              {t('ownerDashboard.workspace', 'Owner Workspace')}
             </span>
-            <span className="font-label-sm text-xs text-on-surface-variant">• Enterprise Role Active</span>
+            <span className="font-label-sm text-xs text-on-surface-variant">• {t('ownerDashboard.enterpriseRoleActive', 'Enterprise Role Active')}</span>
           </div>
           <h1 className="font-display-lg text-display-lg text-on-surface tracking-tight">
-            Welcome back, {userProfile?.fullName || 'Farm Owner'}
+            {t('ownerDashboard.welcomeBack', 'Welcome back, {name}', { name: userProfile?.fullName || translateEnum('common.enums.roles', 'farm_owner') })}
           </h1>
           <p className="font-body-md text-body-md text-on-surface-variant max-w-3xl">
-            Manage your farms, draw Mapbox spatial field boundaries, assign field workers, and monitor telemetry.
+            {t('ownerDashboard.description', 'Manage your farms, draw Mapbox spatial field boundaries, assign field workers, and monitor telemetry.')}
           </p>
         </div>
 
@@ -320,8 +331,8 @@ export const OwnerDashboard: React.FC = () => {
             onClick={() => setShowAddFarmModal(true)}
             className="h-10 px-space-md rounded-xl bg-surface-container-highest text-on-surface font-headline-sm text-body-sm hover:bg-surface-container-high transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
           >
-            <span className="material-symbols-outlined text-[18px]">add_business</span>
-            <span>+ Add Farm</span>
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">add_business</span>
+            <span>{t('ownerDashboard.addFarm', '+ Add Farm')}</span>
           </button>
           <button
             type="button"
@@ -334,8 +345,8 @@ export const OwnerDashboard: React.FC = () => {
             }}
             className="h-10 px-space-lg rounded-xl bg-primary text-on-primary font-headline-sm text-body-sm hover:bg-primary-container transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
-            <span className="material-symbols-outlined text-[18px]">add_location_alt</span>
-            <span>+ Add New Field</span>
+            <span className="material-symbols-outlined text-[18px]" aria-hidden="true">add_location_alt</span>
+            <span>{t('ownerDashboard.addNewField', '+ Add New Field')}</span>
           </button>
         </div>
       </div>
@@ -348,10 +359,10 @@ export const OwnerDashboard: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-              Managed Farms
+              {t('ownerDashboard.managedFarms', 'Managed Farms')}
             </span>
             <span className="font-display-md text-display-md text-on-surface font-bold">
-              {farms.length}
+              {formatNumber(farms.length)}
             </span>
           </div>
         </div>
@@ -362,10 +373,10 @@ export const OwnerDashboard: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-              Active Fields
+              {t('ownerDashboard.activeFields', 'Active Fields')}
             </span>
             <span className="font-display-md text-display-md text-on-surface font-bold">
-              {fields.length}
+              {formatNumber(fields.length)}
             </span>
           </div>
         </div>
@@ -376,10 +387,10 @@ export const OwnerDashboard: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-              Registered Farmers
+              {t('ownerDashboard.registeredFarmers', 'Registered Farmers')}
             </span>
             <span className="font-display-md text-display-md text-on-surface font-bold">
-              {farmers.length}
+              {formatNumber(farmers.length)}
             </span>
           </div>
         </div>
@@ -390,10 +401,10 @@ export const OwnerDashboard: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-              Field Images Uploaded
+              {t('ownerDashboard.fieldImagesUploaded', 'Field Images Uploaded')}
             </span>
             <span className="font-display-md text-display-md text-on-surface font-bold">
-              {images.length}
+              {formatNumber(images.length)}
             </span>
           </div>
         </div>
@@ -405,11 +416,13 @@ export const OwnerDashboard: React.FC = () => {
           <div className="flex items-center gap-space-xs">
             <span className="material-symbols-outlined text-secondary text-[22px]">map</span>
             <h2 className="font-headline-md text-headline-md text-on-surface">
-              Interactive Farm GIS Boundary Map: {selectedFieldForDetail?.name || 'All Fields Overview'}
+              {t('ownerDashboard.interactiveMapTitle', 'Interactive Farm GIS Boundary Map: {field}', {
+                field: selectedFieldForDetail?.name || t('ownerDashboard.allFieldsOverview', 'All Fields Overview'),
+              })}
             </h2>
           </div>
           <span className="font-data-mono text-xs text-secondary bg-surface-container px-2.5 py-1 rounded-md">
-            Mapbox GL JS Enabled
+            {t('ownerDashboard.mapboxEnabled', 'Mapbox GL JS Enabled')}
           </span>
         </div>
 
@@ -422,7 +435,7 @@ export const OwnerDashboard: React.FC = () => {
           initialZoom={14}
           boundary={selectedFieldForDetail?.boundary}
           path={selectedFieldForDetail?.path}
-          fieldTitle={selectedFieldForDetail?.name || 'Salinas Valley Farm Sector'}
+          fieldTitle={selectedFieldForDetail?.name || t('ownerDashboard.defaultMapFieldTitle', 'Salinas Valley Farm Sector')}
           height="450px"
         />
       </section>
@@ -433,14 +446,14 @@ export const OwnerDashboard: React.FC = () => {
         <div className="lg:col-span-7 flex flex-col gap-space-md">
           <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 flex flex-col gap-space-md">
             <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <h3 className="font-headline-md text-headline-md text-on-surface">Field Parcels & Worker Assignments</h3>
-              <span className="text-xs font-semibold text-secondary">{fields.length} Fields Total</span>
+              <h3 className="font-headline-md text-headline-md text-on-surface">{t('ownerDashboard.fieldAssignments', 'Field Parcels & Worker Assignments')}</h3>
+              <span className="text-xs font-semibold text-secondary">{t('common.fields', { count: formatNumber(fields.length) })}</span>
             </div>
 
             <div className="flex flex-col space-y-3">
               {fields.length === 0 ? (
                 <div className="p-8 text-center text-on-surface-variant font-body-sm">
-                  No field parcels found in database. Click "+ Add Field Parcel" above to create your first field.
+                  {t('ownerDashboard.noFieldParcels', 'No field parcels found in database. Click "+ Add Field Parcel" above to create your first field.')}
                 </div>
               ) : (
                 fields.map((f) => {
@@ -469,24 +482,24 @@ export const OwnerDashboard: React.FC = () => {
                             isCrit
                               ? 'bg-error-container text-on-error-container'
                               : isAtt
-                              ? 'bg-amber-100 text-amber-900'
+                              ? 'bg-surface-container-high text-on-surface'
                               : fieldDec.status === 'Insufficient Data'
                               ? 'bg-surface-container text-on-surface-variant'
                               : 'bg-primary-container text-on-primary'
                           }`}
                         >
-                          {fieldDec.status}
+                          {translateEnum('status', fieldDec.status, fieldDec.status)}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 text-xs text-on-surface-variant font-body-sm">
-                        <span>Crop: <strong className="text-on-surface">{f.crop}</strong></span>
-                        <span>Area: <strong className="text-on-surface">{f.areaAcres} Acres</strong></span>
-                        <span>Soil: <strong className="text-on-surface">{f.soilType}</strong></span>
+                        <span>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', f.crop, f.crop)}</strong></span>
+                        <span>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(f.areaAcres)} {t('farm.acres')}</strong></span>
+                        <span>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', f.soilType, f.soilType)}</strong></span>
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 text-xs text-secondary font-semibold">
                         <span className="material-symbols-outlined text-[16px]">account_box</span>
                         <span>
-                          Assigned Farmer: {f.assignedFarmerName || (f as any).farmerName || 'Unassigned'}
+                          {t('fields.assignedFarmer')}: {f.assignedFarmerName || (f as any).farmerName || translateEnum('common.enums.assignmentStatuses', 'unassigned')}
                         </span>
                       </div>
                     </div>
@@ -499,10 +512,11 @@ export const OwnerDashboard: React.FC = () => {
                           openEditFieldWizard(f);
                         }}
                         className="h-8 px-2.5 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1"
-                        title="Edit Field Boundaries & Details"
+                        title={t('ownerDashboard.editFieldDetails', 'Edit Field Boundaries & Details')}
+                        aria-label={t('ownerDashboard.editFieldDetails', 'Edit Field Boundaries & Details')}
                       >
                         <span className="material-symbols-outlined text-[15px]">edit</span>
-                        <span>Edit</span>
+                        <span>{t('common.edit')}</span>
                       </button>
                       <button
                         type="button"
@@ -510,8 +524,9 @@ export const OwnerDashboard: React.FC = () => {
                           e.stopPropagation();
                           setFieldToDelete(f);
                         }}
-                        className="h-8 px-2 rounded-lg bg-red-50 text-red-700 text-xs font-semibold hover:bg-red-100 transition-colors flex items-center gap-1 cursor-pointer"
-                        title="Remove Field Parcel"
+                        className="h-8 px-2 rounded-lg bg-error-container text-on-error-container text-xs font-semibold hover:bg-error-container/80 transition-colors flex items-center gap-1 cursor-pointer"
+                        title={t('ownerDashboard.removeFieldParcel', 'Remove Field Parcel')}
+                        aria-label={t('ownerDashboard.removeFieldParcel', 'Remove Field Parcel')}
                       >
                         <span className="material-symbols-outlined text-[15px]">delete</span>
                       </button>
@@ -527,7 +542,7 @@ export const OwnerDashboard: React.FC = () => {
                             className="h-8 px-2.5 rounded-lg bg-surface-container-highest text-on-surface text-xs font-semibold hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-1 cursor-pointer"
                           >
                             <span className="material-symbols-outlined text-[15px]">swap_horiz</span>
-                            <span>Reassign</span>
+                            <span>{t('ownerDashboard.reassign', 'Reassign')}</span>
                           </button>
                           <button
                             type="button"
@@ -535,8 +550,9 @@ export const OwnerDashboard: React.FC = () => {
                               e.stopPropagation();
                               handleUnassignDirect(f);
                             }}
-                            className="h-8 px-2 rounded-lg bg-red-100 text-red-700 text-xs font-semibold hover:bg-red-200 transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Unassign Worker"
+                            className="h-8 px-2 rounded-lg bg-error-container text-on-error-container text-xs font-semibold hover:bg-error-container/80 transition-colors flex items-center gap-1 cursor-pointer"
+                            title={t('ownerDashboard.unassignWorker', 'Unassign Worker')}
+                            aria-label={t('ownerDashboard.unassignWorker', 'Unassign Worker')}
                           >
                             <span className="material-symbols-outlined text-[15px]">person_remove</span>
                           </button>
@@ -551,7 +567,7 @@ export const OwnerDashboard: React.FC = () => {
                           className="h-8 px-3 rounded-lg bg-primary text-on-primary font-headline-sm text-xs hover:bg-primary-container transition-colors flex items-center gap-1 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[15px]">person_add</span>
-                          <span>Assign Worker</span>
+                          <span>{t('ownerDashboard.assignWorker', 'Assign Worker')}</span>
                         </button>
                       )}
                     </div>
@@ -564,8 +580,8 @@ export const OwnerDashboard: React.FC = () => {
           {/* Registered Farmers Directory */}
           <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 flex flex-col gap-space-md">
             <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <h3 className="font-headline-md text-headline-md text-on-surface">Registered Farmers Directory</h3>
-              <span className="text-xs text-on-surface-variant">{farmers.length} Registered</span>
+              <h3 className="font-headline-md text-headline-md text-on-surface">{t('ownerDashboard.registeredFarmersDirectory', 'Registered Farmers Directory')}</h3>
+              <span className="text-xs text-on-surface-variant">{t('ownerDashboard.registeredCount', '{count} Registered', { count: formatNumber(farmers.length) })}</span>
             </div>
 
             <div className="flex flex-col space-y-2.5">
@@ -591,21 +607,24 @@ export const OwnerDashboard: React.FC = () => {
                       <span
                         className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
                           isAssigned
-                            ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            ? 'bg-secondary-container text-on-secondary-container border border-secondary'
+                            : 'bg-primary-fixed text-on-primary-fixed border border-primary-fixed-dim'
                         }`}
                       >
-                        {isAssigned ? `Assigned to ${assignedFieldObj?.name}` : 'Available'}
+                        {isAssigned
+                          ? t('ownerDashboard.assignedToField', 'Assigned to {field}', { field: assignedFieldObj?.name || '' })
+                          : t('status.available')}
                       </span>
 
                       <button
                         type="button"
                         onClick={() => navigate(`/messages?user=${farmer.uid}`)}
                         className="h-8 px-2.5 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1 cursor-pointer"
-                        title="1-to-1 Chat with Farmer"
+                        title={t('ownerDashboard.chatWithFarmer', '1-to-1 Chat with Farmer')}
+                        aria-label={t('ownerDashboard.chatWithFarmer', '1-to-1 Chat with Farmer')}
                       >
                         <span className="material-symbols-outlined text-[15px]">chat</span>
-                        <span>Chat</span>
+                        <span>{t('ownerDashboard.chat', 'Chat')}</span>
                       </button>
                     </div>
                   </div>
@@ -622,7 +641,7 @@ export const OwnerDashboard: React.FC = () => {
               <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
                 <div className="flex flex-col">
                   <span className="font-label-sm text-xs text-secondary font-semibold uppercase tracking-wider">
-                    Live Telemetry Drawer
+                    {t('farm.fieldTelemetryInspector')}
                   </span>
                   <h3 className="font-headline-md text-headline-md text-on-surface">
                     {selectedFieldForDetail.name}
@@ -634,49 +653,49 @@ export const OwnerDashboard: React.FC = () => {
                   className="h-8 px-2.5 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-[15px]">edit</span>
-                  <span>Edit Parcel</span>
+                  <span>{t('ownerDashboard.editParcel', 'Edit Parcel')}</span>
                 </button>
               </div>
 
               {/* Quick Field Summary */}
               <div className="grid grid-cols-2 gap-2 bg-surface p-3 rounded-lg border border-outline-variant/20 text-xs">
-                <div>Crop: <strong className="text-on-surface">{selectedFieldForDetail.crop}</strong></div>
-                <div>Area: <strong className="text-on-surface">{selectedFieldForDetail.areaAcres} Acres</strong></div>
-                <div>Soil: <strong className="text-on-surface">{selectedFieldForDetail.soilType}</strong></div>
-                <div>Worker: <strong className="text-on-surface">{selectedFieldForDetail.assignedFarmerName || (selectedFieldForDetail as any).farmerName || 'None'}</strong></div>
+                <div>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', selectedFieldForDetail.crop, selectedFieldForDetail.crop)}</strong></div>
+                <div>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(selectedFieldForDetail.areaAcres)} {t('farm.acres')}</strong></div>
+                <div>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', selectedFieldForDetail.soilType, selectedFieldForDetail.soilType)}</strong></div>
+                <div>{t('farm.worker')}: <strong className="text-on-surface">{selectedFieldForDetail.assignedFarmerName || (selectedFieldForDetail as any).farmerName || t('status.none')}</strong></div>
               </div>
 
               {/* Latest Submissions Feed */}
               <div className="flex flex-col gap-2">
                 <h4 className="font-headline-sm text-xs font-semibold text-on-surface uppercase tracking-wider flex items-center justify-between">
-                  <span>Farmer Land Submissions</span>
-                  <span className="text-secondary font-data-mono">{selectedFieldSubmissions.length} Records</span>
+                  <span>{t('ownerDashboard.farmerLandSubmissions', 'Farmer Land Submissions')}</span>
+                  <span className="text-secondary font-data-mono">{t('common.records', { count: formatNumber(selectedFieldSubmissions.length) })}</span>
                 </h4>
 
                 {selectedFieldSubmissions.length === 0 ? (
                   <div className="p-4 text-center text-xs text-on-surface-variant bg-surface rounded-lg">
-                    No field land data submitted yet for this field.
+                    {t('ownerDashboard.noLandSubmissions', 'No field land data submitted yet for this field.')}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2.5 max-h-[300px] overflow-y-auto pr-1">
                     {selectedFieldSubmissions.map((sub, idx) => (
                       <div key={sub.id || idx} className="bg-surface p-3 rounded-lg border border-outline-variant/20 flex flex-col gap-1.5 text-xs">
                         <div className="flex items-center justify-between text-on-surface-variant">
-                          <span className="font-semibold text-on-surface">{sub.farmerName || 'Farmer'}</span>
+                          <span className="font-semibold text-on-surface">{sub.farmerName || translateEnum('common.enums.roles', 'farmer')}</span>
                           <span className="font-data-mono text-[11px]">
-                            {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString() : 'Recent'}
+                            {sub.submittedAt ? formatDate(sub.submittedAt, { dateStyle: 'medium' }) : t('common.recent')}
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-1 bg-surface-container-lowest p-2 rounded text-[11px]">
-                          <div>Moisture: <strong className="text-primary">{sub.soilMoisture !== undefined && sub.soilMoisture !== null ? `${sub.soilMoisture}%` : 'N/A'}</strong></div>
-                          <div>pH: <strong>{sub.soilPH !== undefined && sub.soilPH !== null ? sub.soilPH : 'N/A'}</strong></div>
-                          <div>Temp: <strong>{sub.temperature !== undefined && sub.temperature !== null ? `${sub.temperature}°C` : 'N/A'}</strong></div>
-                          <div>N: <strong>{sub.nitrogen !== undefined && sub.nitrogen !== null ? sub.nitrogen : 'N/A'}</strong></div>
-                          <div>P: <strong>{sub.phosphorus !== undefined && sub.phosphorus !== null ? sub.phosphorus : 'N/A'}</strong></div>
-                          <div>K: <strong>{sub.potassium !== undefined && sub.potassium !== null ? sub.potassium : 'N/A'}</strong></div>
+                          <div>{t('dashboard.moisture')}: <strong className="text-primary">{sub.soilMoisture !== undefined && sub.soilMoisture !== null ? `${formatNumber(sub.soilMoisture, { maximumFractionDigits: 2 })}%` : t('common.notAvailable')}</strong></div>
+                          <div>{t('dashboard.ph')}: <strong>{sub.soilPH !== undefined && sub.soilPH !== null ? formatNumber(sub.soilPH, { maximumFractionDigits: 2 }) : t('common.notAvailable')}</strong></div>
+                          <div>{t('ownerDashboard.temperature', 'Temp')}: <strong>{sub.temperature !== undefined && sub.temperature !== null ? `${formatNumber(sub.temperature, { maximumFractionDigits: 1 })}°C` : t('common.notAvailable')}</strong></div>
+                          <div>{t('ownerDashboard.nitrogen', 'N')}: <strong>{sub.nitrogen !== undefined && sub.nitrogen !== null ? formatNumber(sub.nitrogen, { maximumFractionDigits: 2 }) : t('common.notAvailable')}</strong></div>
+                          <div>{t('ownerDashboard.phosphorus', 'P')}: <strong>{sub.phosphorus !== undefined && sub.phosphorus !== null ? formatNumber(sub.phosphorus, { maximumFractionDigits: 2 }) : t('common.notAvailable')}</strong></div>
+                          <div>{t('ownerDashboard.potassium', 'K')}: <strong>{sub.potassium !== undefined && sub.potassium !== null ? formatNumber(sub.potassium, { maximumFractionDigits: 2 }) : t('common.notAvailable')}</strong></div>
                         </div>
                         <div className="text-on-surface-variant text-[11px]">
-                          Stage: <strong className="text-on-surface">{sub.cropGrowthStage}</strong>
+                          {t('farmerDashboard.growthStage', 'Stage')}: <strong className="text-on-surface">{translateGrowthStage(sub.cropGrowthStage)}</strong>
                         </div>
                         {sub.notes && (
                           <p className="italic text-on-surface-variant text-[11px] bg-surface-container/30 p-1.5 rounded">
@@ -692,25 +711,25 @@ export const OwnerDashboard: React.FC = () => {
               {/* Photos Gallery Feed */}
               <div className="flex flex-col gap-2 pt-2 border-t border-outline-variant/20">
                 <h4 className="font-headline-sm text-xs font-semibold text-on-surface uppercase tracking-wider flex items-center justify-between">
-                  <span>Field Inspection Photos</span>
-                  <span className="text-secondary font-data-mono">{selectedFieldPhotos.length} Photos</span>
+                  <span>{t('ownerDashboard.fieldInspectionPhotos', 'Field Inspection Photos')}</span>
+                  <span className="text-secondary font-data-mono">{t('ownerDashboard.photoCount', '{count} Photos', { count: formatNumber(selectedFieldPhotos.length) })}</span>
                 </h4>
 
                 {selectedFieldPhotos.length === 0 ? (
                   <div className="p-4 text-center text-xs text-on-surface-variant bg-surface rounded-lg">
-                    No photo observations uploaded for this field.
+                    {t('ownerDashboard.noPhotoObservations', 'No photo observations uploaded for this field.')}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2 max-h-[240px] overflow-y-auto">
                     {selectedFieldPhotos.map((img, idx) => (
-                      <div key={img.id || idx} className="group relative rounded-lg overflow-hidden border border-outline-variant/30 bg-black/5">
+                      <div key={img.id || idx} className="group relative rounded-lg overflow-hidden border border-outline-variant/30 bg-surface-container/30">
                         <img
                           src={img.imageUrl}
-                          alt={img.caption || 'Field observation'}
+                          alt={img.caption || t('accessibility.fieldObservation')}
                           className="w-full h-24 object-cover group-hover:scale-105 transition-transform"
                         />
                         <div className="p-1.5 bg-surface text-[10px] text-on-surface font-medium truncate">
-                          {img.caption || img.imageType}
+                          {img.caption || translateEnum('common.enums.imageTypes', img.imageType, img.imageType)}
                         </div>
                       </div>
                     ))}
@@ -720,7 +739,7 @@ export const OwnerDashboard: React.FC = () => {
             </div>
           ) : (
             <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 text-center text-xs text-on-surface-variant">
-              Select a field from the left panel to inspect detailed telemetry and farmer submissions.
+              {t('ownerDashboard.selectFieldForTelemetry', 'Select a field from the left panel to inspect detailed telemetry and farmer submissions.')}
             </div>
           )}
         </div>
@@ -731,22 +750,23 @@ export const OwnerDashboard: React.FC = () => {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-surface-container-lowest w-full max-w-md p-space-lg rounded-xl shadow-xl flex flex-col gap-space-md border border-outline-variant/30">
             <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <h3 className="font-headline-md text-headline-md text-on-surface">Create New Farm</h3>
+              <h3 className="font-headline-md text-headline-md text-on-surface">{t('ownerDashboard.createNewFarm', 'Create New Farm')}</h3>
               <button
                 type="button"
                 onClick={() => setShowAddFarmModal(false)}
                 className="text-on-surface-variant hover:text-on-surface"
+                aria-label={t('accessibility.closeDialog')}
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleAddFarm} className="flex flex-col gap-space-sm">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-on-surface">Farm Name</label>
+                <label className="text-xs font-semibold text-on-surface">{t('settings.farmName')}</label>
                 <input
                   type="text"
                   required
-                  placeholder="Green Valley Farm"
+                  placeholder={t('ownerDashboard.farmNamePlaceholder', 'Green Valley Farm')}
                   value={farmName}
                   onChange={(e) => setFarmName(e.target.value)}
                   className="w-full bg-surface h-9 px-3 rounded-lg text-sm border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -754,10 +774,10 @@ export const OwnerDashboard: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-on-surface">Farm Location</label>
+                <label className="text-xs font-semibold text-on-surface">{t('ownerDashboard.farmLocation', 'Farm Location')}</label>
                 <input
                   type="text"
-                  placeholder="Salinas Valley, CA"
+                  placeholder={t('ownerDashboard.farmLocationPlaceholder', 'Salinas Valley, CA')}
                   value={farmLocation}
                   onChange={(e) => setFarmLocation(e.target.value)}
                   className="w-full bg-surface h-9 px-3 rounded-lg text-sm border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -765,7 +785,7 @@ export const OwnerDashboard: React.FC = () => {
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-on-surface">Total Managed Hectares</label>
+                <label className="text-xs font-semibold text-on-surface">{t('ownerDashboard.totalManagedHectares', 'Total Managed Hectares')}</label>
                 <input
                   type="number"
                   value={farmArea}
@@ -780,13 +800,13 @@ export const OwnerDashboard: React.FC = () => {
                   onClick={() => setShowAddFarmModal(false)}
                   className="px-4 py-2 rounded-lg bg-surface-container text-on-surface text-xs font-semibold"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container"
                 >
-                  Save Farm
+                  {t('settings.saveFarm')}
                 </button>
               </div>
             </form>
@@ -802,7 +822,9 @@ export const OwnerDashboard: React.FC = () => {
               <div className="flex items-center gap-space-xs">
                 <span className="material-symbols-outlined text-secondary">add_location_alt</span>
                 <h3 className="font-headline-md text-headline-md text-on-surface">
-                  {editingField ? `Edit Field: ${editingField.name}` : 'Add Field & Draw Mapbox Geometry'}
+                  {editingField
+                    ? t('ownerDashboard.editFieldTitle', 'Edit Field: {name}', { name: editingField.name })
+                    : t('ownerDashboard.addFieldGeometryTitle', 'Add Field & Draw Mapbox Geometry')}
                 </h3>
               </div>
               <button
@@ -812,6 +834,7 @@ export const OwnerDashboard: React.FC = () => {
                   setEditingField(null);
                 }}
                 className="text-on-surface-variant hover:text-on-surface"
+                aria-label={t('accessibility.closeDialog')}
               >
                 ✕
               </button>
@@ -820,11 +843,11 @@ export const OwnerDashboard: React.FC = () => {
             <form onSubmit={handleSaveField} className="flex flex-col gap-space-md">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-md">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-on-surface">Field Name</label>
+                  <label className="text-xs font-semibold text-on-surface">{t('farm.fieldName')}</label>
                   <input
                     type="text"
                     required
-                    placeholder="North Rice Field"
+                    placeholder={t('ownerDashboard.fieldNamePlaceholder', 'North Rice Field')}
                     value={fieldName}
                     onChange={(e) => setFieldName(e.target.value)}
                     className="w-full bg-surface h-9 px-3 rounded-lg text-sm border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -832,22 +855,22 @@ export const OwnerDashboard: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-on-surface">Crop Type</label>
+                  <label className="text-xs font-semibold text-on-surface">{t('farm.cropType')}</label>
                   <select
                     value={fieldCrop}
                     onChange={(e) => setFieldCrop(e.target.value)}
                     className="w-full bg-surface h-9 px-3 rounded-lg text-sm border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary"
                   >
-                    <option>Rice</option>
-                    <option>Maize</option>
-                    <option>Wheat</option>
-                    <option>Potato</option>
-                    <option>Tomato</option>
+                    <option value="Rice">{t('common.enums.crops.rice')}</option>
+                    <option value="Maize">{t('common.enums.crops.maize')}</option>
+                    <option value="Wheat">{t('common.enums.crops.wheat')}</option>
+                    <option value="Potato">{t('common.enums.crops.potato')}</option>
+                    <option value="Tomato">{t('common.enums.crops.tomato')}</option>
                   </select>
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-on-surface">Soil Classification</label>
+                  <label className="text-xs font-semibold text-on-surface">{t('farm.soilClassification')}</label>
                   <input
                     type="text"
                     value={fieldSoil}
@@ -857,7 +880,7 @@ export const OwnerDashboard: React.FC = () => {
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-on-surface">Area (Acres)</label>
+                  <label className="text-xs font-semibold text-on-surface">{t('ownerDashboard.areaAcres', 'Area (Acres)')}</label>
                   <input
                     type="number"
                     value={fieldArea}
@@ -870,8 +893,8 @@ export const OwnerDashboard: React.FC = () => {
               {/* Mapbox Boundary & Path Drawing Map */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-on-surface flex items-center justify-between">
-                  <span>Draw Field Boundary (Polygon) & Route (Path)</span>
-                  <span className="text-[11px] text-secondary font-data-mono">Mapbox GL Draw Active</span>
+                  <span>{t('ownerDashboard.drawBoundary', 'Draw Field Boundary (Polygon) & Route (Path)')}</span>
+                  <span className="text-[11px] text-secondary font-data-mono">{t('ownerDashboard.mapboxDrawActive', 'Mapbox GL Draw Active')}</span>
                 </label>
                 <AgroMap
                   initialCenter={[fieldLng, fieldLat]}
@@ -883,7 +906,7 @@ export const OwnerDashboard: React.FC = () => {
                     setFieldBoundary(b);
                     setFieldPath(p);
                   }}
-                  fieldTitle="Draw Polygon Boundary / Path"
+                  fieldTitle={t('ownerDashboard.drawMapTitle', 'Draw Polygon Boundary / Path')}
                   height="320px"
                 />
               </div>
@@ -897,13 +920,15 @@ export const OwnerDashboard: React.FC = () => {
                   }}
                   className="px-4 py-2 rounded-lg bg-surface-container text-on-surface text-xs font-semibold"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container"
                 >
-                  {editingField ? 'Save Changes' : 'Save Field & Geometry'}
+                  {editingField
+                    ? t('ownerDashboard.saveChanges', 'Save Changes')
+                    : t('ownerDashboard.saveFieldGeometry', 'Save Field & Geometry')}
                 </button>
               </div>
             </form>
@@ -917,9 +942,9 @@ export const OwnerDashboard: React.FC = () => {
           <div className="bg-surface-container-lowest w-full max-w-lg p-space-lg rounded-xl shadow-2xl flex flex-col gap-space-md border border-outline-variant/30 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
               <div className="flex flex-col">
-                <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">Field Parcel Assignment</span>
+                <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">{t('ownerDashboard.fieldParcelAssignment', 'Field Parcel Assignment')}</span>
                 <h3 className="font-headline-md text-headline-md text-on-surface">
-                  Assign Worker: {selectedFieldForAssign.name}
+                  {t('ownerDashboard.assignWorkerToField', 'Assign Worker: {field}', { field: selectedFieldForAssign.name })}
                 </h3>
               </div>
               <button
@@ -927,6 +952,7 @@ export const OwnerDashboard: React.FC = () => {
                 disabled={isAssigning}
                 onClick={() => setSelectedFieldForAssign(null)}
                 className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg hover:bg-surface-container transition-colors"
+                aria-label={t('accessibility.closeDialog')}
               >
                 ✕
               </button>
@@ -934,7 +960,7 @@ export const OwnerDashboard: React.FC = () => {
 
             {/* Error Banner */}
             {assignError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs font-semibold flex items-center gap-2">
+              <div className="p-3 bg-error-container border border-error rounded-lg text-on-error-container text-xs font-semibold flex items-center gap-2">
                 <span className="material-symbols-outlined text-[18px]">error</span>
                 <span>{assignError}</span>
               </div>
@@ -951,13 +977,13 @@ export const OwnerDashboard: React.FC = () => {
             <form onSubmit={handleAssignFarmer} className="flex flex-col gap-space-md">
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-on-surface flex items-center justify-between">
-                  <span>Select Worker</span>
-                  <span className="text-[11px] text-on-surface-variant font-normal">Choose a registered field worker</span>
+                  <span>{t('ownerDashboard.selectWorker', 'Select Worker')}</span>
+                  <span className="text-[11px] text-on-surface-variant font-normal">{t('ownerDashboard.chooseRegisteredWorker', 'Choose a registered field worker')}</span>
                 </label>
 
                 {farmers.length === 0 ? (
                   <div className="p-4 bg-surface rounded-lg border border-outline-variant/30 text-center text-xs text-on-surface-variant">
-                    No registered farmers/workers found in database.
+                    {t('ownerDashboard.noRegisteredWorkers', 'No registered farmers/workers found in database.')}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2 max-h-[260px] overflow-y-auto pr-1">
@@ -994,7 +1020,7 @@ export const OwnerDashboard: React.FC = () => {
                             </div>
                           </div>
                           <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-surface-container text-secondary">
-                            {assignedCount} Field{assignedCount !== 1 ? 's' : ''}
+                            {t('common.fields', { count: formatNumber(assignedCount) })}
                           </span>
                         </div>
                       );
@@ -1007,7 +1033,7 @@ export const OwnerDashboard: React.FC = () => {
                       }}
                       className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
                         selectedFarmerId === '__unassign__'
-                          ? 'border-red-400 ring-2 ring-red-400/20 bg-red-50'
+                          ? 'border-error ring-2 ring-error/20 bg-error-container'
                           : 'border-outline-variant/20 bg-surface hover:border-outline-variant'
                       }`}
                     >
@@ -1018,9 +1044,9 @@ export const OwnerDashboard: React.FC = () => {
                           checked={selectedFarmerId === '__unassign__'}
                           onChange={() => setSelectedFarmerId('__unassign__')}
                           disabled={isAssigning}
-                          className="accent-red-600 w-4 h-4 cursor-pointer"
+                          className="accent-error w-4 h-4 cursor-pointer"
                         />
-                        <span className="text-xs font-medium text-red-700">-- Unassign Current Worker --</span>
+                        <span className="text-xs font-medium text-on-error-container">{t('ownerDashboard.unassignCurrentWorker', '-- Unassign Current Worker --')}</span>
                       </div>
                     </div>
                   </div>
@@ -1034,7 +1060,7 @@ export const OwnerDashboard: React.FC = () => {
                   onClick={() => setSelectedFieldForAssign(null)}
                   className="px-4 py-2 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors disabled:opacity-50"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
@@ -1043,13 +1069,13 @@ export const OwnerDashboard: React.FC = () => {
                 >
                   {isAssigning ? (
                     <>
-                      <span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin inline-block" />
-                      <span>Saving...</span>
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-on-primary border-t-transparent animate-spin inline-block" />
+                      <span>{t('common.saving')}</span>
                     </>
                   ) : (
                     <>
                       <span className="material-symbols-outlined text-[16px]">check</span>
-                      <span>Assign Worker</span>
+                      <span>{t('ownerDashboard.assignWorker', 'Assign Worker')}</span>
                     </>
                   )}
                 </button>
@@ -1064,20 +1090,25 @@ export const OwnerDashboard: React.FC = () => {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-surface-container-lowest w-full max-w-md p-space-lg rounded-xl shadow-xl flex flex-col gap-space-md border border-outline-variant/30">
             <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <div className="flex items-center gap-2 text-red-700">
+              <div className="flex items-center gap-2 text-on-error-container">
                 <span className="material-symbols-outlined text-[24px]">delete_forever</span>
-                <h3 className="font-headline-md text-headline-md font-bold text-on-surface">Confirm Field Removal</h3>
+                <h3 className="font-headline-md text-headline-md font-bold text-on-surface">{t('ownerDashboard.confirmFieldRemoval', 'Confirm Field Removal')}</h3>
               </div>
-              <button type="button" onClick={() => setFieldToDelete(null)} className="text-on-surface-variant hover:text-on-surface">
+              <button
+                type="button"
+                onClick={() => setFieldToDelete(null)}
+                className="text-on-surface-variant hover:text-on-surface"
+                aria-label={t('accessibility.closeDialog')}
+              >
                 ✕
               </button>
             </div>
 
             <p className="text-sm text-on-surface-variant leading-relaxed">
-              Are you sure you want to remove <strong>{fieldToDelete.name}</strong>?
+              {t('validation.removeFieldConfirm', { name: fieldToDelete.name })}
             </p>
             <p className="text-xs text-on-surface-variant bg-surface p-3 rounded-lg border border-outline-variant/20">
-              This field will be deleted from your farm database. Any active worker assignment will be cleared.
+              {t('ownerDashboard.fieldRemovalWarning', 'This field will be deleted from your farm database. Any active worker assignment will be cleared.')}
             </p>
 
             <div className="flex items-center justify-end gap-space-sm pt-2">
@@ -1086,16 +1117,16 @@ export const OwnerDashboard: React.FC = () => {
                 onClick={() => setFieldToDelete(null)}
                 className="h-9 px-4 rounded-lg bg-surface-container text-on-surface font-semibold text-xs hover:bg-surface-container-high transition-colors cursor-pointer"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
                 disabled={isDeletingField}
                 onClick={handleDeleteFieldConfirm}
-                className="h-9 px-4 rounded-lg bg-red-600 text-white font-semibold text-xs hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                className="h-9 px-4 rounded-lg bg-error text-on-error font-semibold text-xs hover:opacity-90 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">delete</span>
-                <span>{isDeletingField ? 'Removing...' : 'Remove Field'}</span>
+                <span>{isDeletingField ? t('common.loading') : t('ownerDashboard.removeField', 'Remove Field')}</span>
               </button>
             </div>
           </div>

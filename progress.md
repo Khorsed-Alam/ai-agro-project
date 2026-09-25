@@ -1,6 +1,32 @@
 # AgroAI Progress Checklist
 
+## Bilingual (i18n) & Theme Support
+**Status: Completed with manual verification pending for protected routes**
+
+### Completed
+- [x] Centralized English/Bangla locale resources (`frontend/src/i18n/`)
+- [x] Persistent language preference (`agroai-language`)
+- [x] Persistent light/dark theme preference (`agroai-theme`)
+- [x] Pre-paint preference bootstrap in `frontend/index.html`
+- [x] Global preference controls in the application shell
+- [x] Language and theme controls in the Settings appearance section
+- [x] Forest/slate dark theme tokens and Bangla font fallback
+- [x] UI translation migration across public auth and protected application routes
+- [x] Theme compatibility pass for shared cards, navigation, forms, status badges, tables, and map/AI panels
+
+### In Progress
+- [ ] Complete manual route-by-route interaction checks for authenticated screens
+
+### Pending
+- [ ] Complete regression checks for authentication, routing, Firebase, API calls, CRUD, weather, and AI interfaces
+
+### Known Issues
+- Backend-generated dynamic recommendations and Firestore/user-entered content remain in their source language unless a display mapping exists; canonical values are not changed.
+- No automated frontend test suite is currently configured; validation is build, lint, and manual smoke testing.
+- Existing lint warnings remain in pre-existing hook/effect code; lint exits successfully.
+
 ## Stitch UI Migration
+
 **Status: Completed**
 
 ### Pages Migrated
