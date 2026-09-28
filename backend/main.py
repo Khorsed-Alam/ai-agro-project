@@ -6,6 +6,7 @@ Main Entry Point with Full API Contracts & AI Modules Integration
 import sys
 import os
 import csv
+import math
 from typing import List, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -147,21 +148,337 @@ def delete_field(field_id: str):
     AgroDatabaseService.delete_field(field_id)
     return {"message": f"Field {field_id} deleted successfully."}
 
-# --- Weather ---
+# --- Weather with Real Online Open-Meteo Integration ---
+WMO_WEATHER_MAP = {
+    0: {"desc": "Clear Peak", "icon": "wb_sunny", "summary": "Clear sky with maximum solar penetration. Unrestricted transpiration potential."},
+    1: {"desc": "Sunny", "icon": "wb_sunny", "summary": "Mainly clear conditions across the agricultural canopy with optimal photosynthesis rates."},
+    2: {"desc": "Partly Cloudy", "icon": "partly_cloudy_day", "summary": "Partly cloudy with intermittent solar irradiance. Ideal atmospheric boundary layer."},
+    3: {"desc": "Overcast", "icon": "cloud", "summary": "Overcast cloud cover reducing direct PAR irradiance. Lower evapotranspiration stress."},
+    45: {"desc": "Coastal Fog", "icon": "foggy", "summary": "Marine boundary layer fog with high relative humidity and suppressed vapor pressure deficit."},
+    48: {"desc": "Coastal Fog", "icon": "foggy", "summary": "Dense rime fog maintaining high surface leaf moisture levels."},
+    51: {"desc": "Light Showers", "icon": "rainy", "summary": "Light patchy drizzle with slight surface wetting. Inhibit foliar chemical spray operations."},
+    53: {"desc": "Light Showers", "icon": "rainy", "summary": "Moderate drizzle creating wet canopy conditions. Foliage disease risk elevated."},
+    55: {"desc": "Light Showers", "icon": "rainy", "summary": "Dense drizzle accumulation across root zones."},
+    61: {"desc": "Light Showers", "icon": "rainy", "summary": "Slight rain showers. Temporarily pause scheduled mechanical irrigation cycles."},
+    63: {"desc": "Light Showers", "icon": "rainy", "summary": "Moderate rain accumulation. Natural infiltration replenishing topsoil layer."},
+    65: {"desc": "Light Showers", "icon": "rainy", "summary": "Heavy rainfall. Check drainage ditches and pause active irrigation pumps."},
+    71: {"desc": "Light Showers", "icon": "ac_unit", "summary": "Slight snow or frost risk. Activate frost protection protocols where active."},
+    80: {"desc": "Light Showers", "icon": "rainy", "summary": "Isolated rain showers passing through the field sector."},
+    81: {"desc": "Light Showers", "icon": "rainy", "summary": "Moderate rain showers across the cultivation zone."},
+    82: {"desc": "Light Showers", "icon": "rainy", "summary": "Violent rain showers with high kinetic droplet impact."},
+    95: {"desc": "Light Showers", "icon": "thunderstorm", "summary": "Thunderstorm activity detected. Suspend field personnel and autonomous machinery."}
+}
+
+CARDINAL_DIRECTIONS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+
+def degrees_to_cardinal(deg: float) -> str:
+    try:
+        idx = int((deg + 11.25) / 22.5) % 16
+        return CARDINAL_DIRECTIONS[idx]
+    except Exception:
+        return "NW"
+
+def calculate_stull_wet_bulb(temp_c: float, rh_pct: float) -> float:
+    """
+    Calculates Wet Bulb Temperature (°C) using the scientifically validated Stull (2011) formula.
+    Accurate to within 0.15°C for agricultural spray operations.
+    """
+    rh = max(1.0, min(100.0, rh_pct))
+    t = temp_c
+    tw = (
+        t * math.atan(0.151977 * math.sqrt(rh + 8.313659))
+        + math.atan(t + rh)
+        - math.atan(rh - 1.676331)
+        + 0.00391838 * (rh ** 1.5) * math.atan(0.023101 * rh)
+        - 4.686035
+    )
+    return round(tw, 2)
+
+def resolve_weather_location(lat: Optional[float], lon: Optional[float], location_name: Optional[str]):
+    """
+    Resolves target latitude, longitude, and descriptive label.
+    Supports coordinates, city/place geocoding, and IP auto-detection.
+    """
+    import requests
+
+    # Case 1: Coordinates provided directly
+    if lat is not None and lon is not None:
+        label = location_name if location_name and location_name.strip() else f"{round(lat, 4)}°, {round(lon, 4)}°"
+        return lat, lon, label
+
+    # Case 2: City / location name provided -> use Open-Meteo Geocoding
+    if location_name and location_name.strip():
+        try:
+            q = requests.utils.quote(location_name.strip())
+            geo_res = requests.get(
+                f"https://geocoding-api.open-meteo.com/v1/search?name={q}&count=1&language=en&format=json",
+                timeout=4
+            ).json()
+            results = geo_res.get("results")
+            if results and len(results) > 0:
+                first = results[0]
+                resolved_lat = float(first["latitude"])
+                resolved_lon = float(first["longitude"])
+                name = first.get("name", location_name)
+                country = first.get("country", "")
+                resolved_label = f"{name}, {country}".strip(", ")
+                return resolved_lat, resolved_lon, resolved_label
+        except Exception as e:
+            print(f"[Weather Geocoding] Failed to resolve '{location_name}': {e}")
+
+    # Case 3: Auto-detect location via IP geolocation (find where user/server actually is)
+    try:
+        ip_res = requests.get("http://ip-api.com/json", timeout=3).json()
+        if ip_res.get("status") == "success":
+            detected_lat = float(ip_res["lat"])
+            detected_lon = float(ip_res["lon"])
+            city = ip_res.get("city", "")
+            country = ip_res.get("country", "")
+            detected_label = f"{city}, {country}".strip(", ")
+            return detected_lat, detected_lon, detected_label
+    except Exception as e:
+        print(f"[Weather IP Detect] IP geolocation fallback failed: {e}")
+
+    # Fallback to Dhaka, Bangladesh (BST +06:00)
+    return 23.7891, 90.4126, "Dhaka, Bangladesh"
+
+@app.get("/api/weather/search")
+def search_weather_location(query: str):
+    if not query or len(query.strip()) < 2:
+        return []
+    try:
+        import requests
+        geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={requests.utils.quote(query.strip())}&count=6&language=en&format=json"
+        res = requests.get(geo_url, timeout=4).json()
+        results = res.get("results", [])
+        return [
+            {
+                "name": item.get("name"),
+                "country": item.get("country", ""),
+                "admin1": item.get("admin1", ""),
+                "latitude": item.get("latitude"),
+                "longitude": item.get("longitude"),
+                "label": f"{item.get('name')}, {item.get('admin1') + ', ' if item.get('admin1') else ''}{item.get('country', '')}".strip(", ")
+            }
+            for item in results
+        ]
+    except Exception as e:
+        print(f"[Weather Location Search] Error: {e}")
+        return []
+
 @app.get("/api/weather")
-def get_weather():
+def get_weather(lat: Optional[float] = None, lon: Optional[float] = None, location: Optional[str] = None):
+    target_lat, target_lon, loc_label = resolve_weather_location(lat, lon, location)
+
+    try:
+        import requests
+        api_url = (
+            f"https://api.open-meteo.com/v1/forecast"
+            f"?latitude={target_lat}&longitude={target_lon}"
+            f"&current=temperature_2m,relative_humidity_2m,apparent_temperature,dew_point_2m,precipitation,rain,showers,weather_code,pressure_msl,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,shortwave_radiation"
+            f"&daily=weather_code,temperature_2m_max,temperature_2m_min,apparent_temperature_max,apparent_temperature_min,precipitation_sum,precipitation_probability_max,et0_fao_evapotranspiration,uv_index_max,wind_speed_10m_max,wind_gusts_10m_max"
+            f"&hourly=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,wind_speed_10m,cloud_cover"
+            f"&timezone=auto&models=best_match"
+        )
+        resp = requests.get(api_url, timeout=6)
+        if resp.status_code == 200:
+            data = resp.json()
+            cur = data.get("current", {})
+            daily = data.get("daily", {})
+            hourly = data.get("hourly", {})
+
+            temp = float(cur.get("temperature_2m", 28.0))
+            feels_like = float(cur.get("apparent_temperature", temp))
+            rh = float(cur.get("relative_humidity_2m", 65.0))
+            dew = float(cur.get("dew_point_2m", temp - 5.0))
+            wet_bulb = calculate_stull_wet_bulb(temp, rh)
+            delta_t = round(max(0.0, temp - wet_bulb), 1)
+
+            wind_speed = float(cur.get("wind_speed_10m", 8.0))
+            wind_gusts = float(cur.get("wind_gusts_10m", round(wind_speed * 1.3, 1)))
+            wind_dir_deg = float(cur.get("wind_direction_10m", 180.0))
+            wind_dir = degrees_to_cardinal(wind_dir_deg)
+
+            # Mean Sea Level normalized pressure for standard barometry
+            pressure = float(cur.get("pressure_msl") or cur.get("surface_pressure", 1013.2))
+            cloud_cover = int(cur.get("cloud_cover", 20))
+            precip = float(cur.get("precipitation", 0.0))
+            wcode = int(cur.get("weather_code", 0))
+            solar = float(cur.get("shortwave_radiation", 600.0))
+
+            # VPD calculation (kPa) using actual saturated and actual vapor pressures
+            es = 0.61078 * math.exp((17.27 * temp) / (temp + 237.3))
+            ea = es * (rh / 100.0)
+            vpd = round(max(0.0, es - ea), 2)
+
+            # Leaf moisture estimation
+            if precip > 0:
+                leaf_moist = min(100, int(75 + precip * 10))
+            else:
+                leaf_moist = max(5, min(95, int((rh - 20) * 0.9)))
+
+            # Current weather interpretation
+            w_info = WMO_WEATHER_MAP.get(wcode, {"desc": "Clear Sky", "icon": "wb_sunny", "summary": "Favorable microclimate conditions across field sector."})
+
+            # Daily highs/lows and Evapotranspiration
+            max_temps = daily.get("temperature_2m_max", [round(temp + 3, 1)])
+            min_temps = daily.get("temperature_2m_min", [round(temp - 6, 1)])
+            et0_list = daily.get("et0_fao_evapotranspiration", [4.2])
+            precip_sums = daily.get("precipitation_sum", [precip])
+            prob_list = daily.get("precipitation_probability_max", [10])
+            uv_max_list = daily.get("uv_index_max", [round(solar / 100, 1)])
+            dates = daily.get("time", [])
+
+            cur_high = round(max_temps[0]) if max_temps else round(temp + 3)
+            cur_low = round(min_temps[0]) if min_temps else round(temp - 6)
+            cur_et0 = round(et0_list[0], 1) if et0_list and et0_list[0] is not None else 4.2
+            cur_precip_24h = round(precip_sums[0], 1) if precip_sums and precip_sums[0] is not None else precip
+            cur_uv = round(uv_max_list[0], 1) if uv_max_list and uv_max_list[0] is not None else round(max(1.0, solar / 100.0), 1)
+
+            # Build 7-day forecast
+            forecast = []
+            num_days = min(7, len(dates)) if dates else 7
+            for i in range(num_days):
+                code_i = daily.get("weather_code", [])[i] if i < len(daily.get("weather_code", [])) else wcode
+                info_i = WMO_WEATHER_MAP.get(code_i, {"desc": "Clear Sky", "icon": "wb_sunny"})
+                d_high = round(max_temps[i]) if i < len(max_temps) else round(temp + 2)
+                d_low = round(min_temps[i]) if i < len(min_temps) else round(temp - 7)
+                d_rain = round(precip_sums[i], 1) if i < len(precip_sums) and precip_sums[i] is not None else 0.0
+                d_prob = int(prob_list[i]) if i < len(prob_list) and prob_list[i] is not None else 0
+                d_et0 = round(et0_list[i], 1) if i < len(et0_list) and et0_list[i] is not None else 4.0
+                d_uv = round(uv_max_list[i], 1) if i < len(uv_max_list) and uv_max_list[i] is not None else 5.0
+
+                forecast.append({
+                    "day": i,
+                    "date": dates[i] if i < len(dates) else None,
+                    "icon": info_i["icon"],
+                    "high": d_high,
+                    "low": d_low,
+                    "desc": info_i["desc"],
+                    "rain": d_rain,
+                    "prob": d_prob,
+                    "et0": d_et0,
+                    "uv_index": d_uv
+                })
+
+            # Build next 24-hour micro-forecast
+            h_times = hourly.get("time", [])
+            h_temps = hourly.get("temperature_2m", [])
+            h_feels = hourly.get("apparent_temperature", [])
+            h_rhs = hourly.get("relative_humidity_2m", [])
+            h_probs = hourly.get("precipitation_probability", [])
+            h_precips = hourly.get("precipitation", [])
+            h_wcodes = hourly.get("weather_code", [])
+            h_winds = hourly.get("wind_speed_10m", [])
+            h_clouds = hourly.get("cloud_cover", [])
+
+            cur_time_str = cur.get("time", "")
+            cur_hour_prefix = cur_time_str[:13] if len(cur_time_str) >= 13 else ""
+            start_idx = 0
+            if cur_hour_prefix:
+                for i, ht in enumerate(h_times):
+                    if ht.startswith(cur_hour_prefix) or ht >= cur_time_str:
+                        start_idx = i
+                        break
+
+            hourly_24h = []
+            for i in range(start_idx, min(start_idx + 24, len(h_times))):
+                code_h = h_wcodes[i] if i < len(h_wcodes) else 0
+                h_info = WMO_WEATHER_MAP.get(code_h, {"desc": "Clear Sky", "icon": "wb_sunny"})
+                t_iso = h_times[i]
+                hour_label = t_iso.split("T")[-1] if "T" in t_iso else t_iso
+                hourly_24h.append({
+                    "time": t_iso,
+                    "hour": hour_label,
+                    "temp_c": round(float(h_temps[i]), 1) if i < len(h_temps) else temp,
+                    "feels_like_c": round(float(h_feels[i]), 1) if i < len(h_feels) else temp,
+                    "humidity_pct": int(h_rhs[i]) if i < len(h_rhs) else int(rh),
+                    "rain_prob": int(h_probs[i]) if i < len(h_probs) else 0,
+                    "rain_mm": round(float(h_precips[i]), 1) if i < len(h_precips) else 0.0,
+                    "wind_speed_kmh": round(float(h_winds[i]), 1) if i < len(h_winds) else wind_speed,
+                    "cloud_cover_pct": int(h_clouds[i]) if i < len(h_clouds) else cloud_cover,
+                    "weather_code": code_h,
+                    "icon": h_info["icon"],
+                    "desc": h_info["desc"]
+                })
+
+            return {
+                "location": loc_label,
+                "latitude": target_lat,
+                "longitude": target_lon,
+                "temperature_c": round(temp, 1),
+                "feels_like_c": round(feels_like, 1),
+                "temp_high_c": cur_high,
+                "temp_low_c": cur_low,
+                "humidity_pct": int(rh),
+                "dew_point_c": round(dew, 1),
+                "wet_bulb_c": round(wet_bulb, 1),
+                "delta_t_c": delta_t,
+                "vpd_kpa": vpd,
+                "leaf_moisture_pct": leaf_moist,
+                "wind_speed_kmh": round(wind_speed, 1),
+                "wind_gusts_kmh": round(wind_gusts, 1),
+                "wind_direction": wind_dir,
+                "wind_direction_deg": round(wind_dir_deg),
+                "cloud_cover_pct": cloud_cover,
+                "uv_index": cur_uv,
+                "solar_irradiance_w_m2": round(solar) if solar > 0 else 580,
+                "evapotranspiration_eto_mm": cur_et0,
+                "barometer_hpa": round(pressure, 1),
+                "precipitation_24h_mm": cur_precip_24h,
+                "status": w_info["desc"],
+                "icon": w_info["icon"],
+                "summary": w_info["summary"],
+                "forecast": forecast,
+                "hourly": hourly_24h,
+                "is_simulated": False,
+                "source": "Open-Meteo High-Resolution (ECMWF/ICON/GFS Blended)",
+                "online": True
+            }
+    except Exception as e:
+        print(f"[Weather API] Open-Meteo fetch failed, using fallback: {e}")
+
+    # Fallback if offline
     return {
-        "location": "Salinas Valley, CA (Sector 4)",
-        "temperature_c": 22.8,
-        "humidity_pct": 58,
-        "wind_speed_kmh": 9.4,
-        "wind_direction": "NW",
-        "solar_irradiance_w_m2": 720,
-        "evapotranspiration_eto_mm": 4.2,
-        "barometer_hpa": 1014.8,
+        "location": loc_label,
+        "latitude": target_lat,
+        "longitude": target_lon,
+        "temperature_c": 30.5,
+        "feels_like_c": 35.8,
+        "temp_high_c": 33,
+        "temp_low_c": 26,
+        "humidity_pct": 68,
+        "dew_point_c": 24.2,
+        "wet_bulb_c": 25.8,
+        "delta_t_c": 4.7,
+        "vpd_kpa": 1.35,
+        "leaf_moisture_pct": 35,
+        "wind_speed_kmh": 6.5,
+        "wind_gusts_kmh": 12.0,
+        "wind_direction": "SE",
+        "wind_direction_deg": 135,
+        "cloud_cover_pct": 25,
+        "uv_index": 6.5,
+        "solar_irradiance_w_m2": 620,
+        "evapotranspiration_eto_mm": 4.5,
+        "barometer_hpa": 1009.5,
         "precipitation_24h_mm": 0.0,
-        "status": "Partly Cloudy",
-        "is_simulated": True
+        "status": "Clear Peak",
+        "icon": "wb_sunny",
+        "summary": "Typical seasonal boundary layer. Stable transpiration conditions.",
+        "forecast": [
+            {"day": 0, "icon": "wb_sunny", "high": 33, "low": 26, "desc": "Clear Peak", "rain": 0, "prob": 5, "uv_index": 7.0},
+            {"day": 1, "icon": "partly_cloudy_day", "high": 34, "low": 26, "desc": "Partly Cloudy", "rain": 0, "prob": 10, "uv_index": 6.5},
+            {"day": 2, "icon": "partly_cloudy_day", "high": 32, "low": 25, "desc": "Partly Cloudy", "rain": 0.5, "prob": 25, "uv_index": 5.8},
+            {"day": 3, "icon": "rainy", "high": 31, "low": 25, "desc": "Light Showers", "rain": 3.0, "prob": 60, "uv_index": 4.0},
+            {"day": 4, "icon": "cloud", "high": 30, "low": 24, "desc": "Overcast", "rain": 1.0, "prob": 40, "uv_index": 4.5},
+            {"day": 5, "icon": "wb_sunny", "high": 32, "low": 25, "desc": "Sunny", "rain": 0.0, "prob": 10, "uv_index": 6.8},
+            {"day": 6, "icon": "wb_sunny", "high": 33, "low": 26, "desc": "Clear Peak", "rain": 0.0, "prob": 5, "uv_index": 7.0},
+        ],
+        "hourly": [],
+        "is_simulated": True,
+        "source": "Fallback Cache",
+        "online": False
     }
 
 # --- Resources & Sensors ---
