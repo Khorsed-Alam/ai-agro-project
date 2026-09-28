@@ -863,6 +863,8 @@ class AgroDatabaseService:
                 for d in docs:
                     item = d.to_dict()
                     item["id"] = d.id
+                    if item.get("createdAt") and hasattr(item["createdAt"], "isoformat"):
+                        item["createdAt"] = item["createdAt"].isoformat()
                     messages.append(item)
                 return sorted(messages, key=lambda m: str(m.get("createdAt", "")))
             except Exception as e:
@@ -877,8 +879,11 @@ class AgroDatabaseService:
     @staticmethod
     def save_message(msg_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         import time, random, string
-        msg_id = f"msg_{int(time.time()*1000)}_{''.join(random.choices(string.ascii_lowercase, k=5))}"
+        from datetime import datetime, timezone
+        msg_id = msg_data.get("id") or f"msg_{int(time.time()*1000)}_{''.join(random.choices(string.ascii_lowercase, k=5))}"
         msg_data["id"] = msg_id
+        if "createdAt" not in msg_data or not msg_data["createdAt"]:
+            msg_data["createdAt"] = datetime.now(timezone.utc).isoformat()
 
         if using_admin_sdk and firestore_client:
             try:
