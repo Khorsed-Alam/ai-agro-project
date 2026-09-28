@@ -6,10 +6,14 @@ Implements MobileNetV2 with transfer learning for disease classification.
 import os
 import torch
 import torch.nn as nn
-from torchvision import models
+try:
+    from torchvision import models
+except ImportError:
+    models = None
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 import json
+
 
 
 class PlantDiseaseMobileNetV2(nn.Module):
@@ -35,10 +39,14 @@ class PlantDiseaseMobileNetV2(nn.Module):
         self.pretrained = pretrained
         self.dropout_rate = dropout_rate
         
+        if models is None:
+            raise ImportError("torchvision package is required. Please install it using: pip install torchvision")
+
         # Load MobileNetV2 backbone
         if pretrained:
             weights = models.MobileNet_V2_Weights.IMAGENET1K_V1
             self.backbone = models.mobilenet_v2(weights=weights)
+
         else:
             self.backbone = models.mobilenet_v2(weights=None)
         
@@ -220,10 +228,26 @@ def load_model(model_path: str,
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    checkpoint = torch.load(model_path, map_location=device)
+    try:
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+    except Exception:
+        checkpoint = torch.load(model_path, map_location=device)
     
+    # Case A: Full PyTorch model instance
+    if isinstance(checkpoint, nn.Module):
+        checkpoint.eval()
+        checkpoint.to(device)
+        return {
+            'model': checkpoint,
+            'class_names': [],
+            'metadata': {},
+            'num_classes': 23,
+            'device': device
+        }
+
+    # Case B: Dictionary checkpoint
     class_names = checkpoint.get('class_names', [])
-    num_classes = checkpoint.get('num_classes', len(class_names))
+    num_classes = checkpoint.get('num_classes', len(class_names)) if class_names else 23
     model_arch = checkpoint.get('model_architecture', 'PlantDiseaseMobileNetV2')
     metadata = checkpoint.get('metadata', {})
     
@@ -238,9 +262,18 @@ def load_model(model_path: str,
     else:
         model = PlantDiseaseMobileNetV2(num_classes, pretrained=False)
     
-    model.load_state_dict(checkpoint['model_state_dict'])
+    if 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    elif isinstance(checkpoint, dict):
+        # State dict directly saved
+        try:
+            model.load_state_dict(checkpoint)
+        except Exception:
+            pass
+
     model.to(device)
     model.eval()
+
     
     print(f"[Model] Loaded model from: {model_path}")
     print(f"[Model] Classes: {num_classes}, Device: {device}")

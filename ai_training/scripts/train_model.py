@@ -374,7 +374,15 @@ def train(args):
                 },
                 best_path,
             )
+            try:
+                import shutil
+                target_cnn_path = WORKSPACE_ROOT.parent / "backend" / "ai" / "cnn" / "plant_disease_cnn.pth"
+                target_cnn_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(best_path, target_cnn_path)
+            except Exception as copy_exc:
+                print(f"[WARN] Could not sync model to backend: {copy_exc}")
         else:
+
             patience += 1
 
         marker = "*" if improved else " "

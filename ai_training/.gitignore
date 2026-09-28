@@ -32,7 +32,11 @@ venv/
 # Training checkpoints (keep the final production model, drop intermediates)
 models/*.pth
 models/*.pt
+!models/best_model.pth
+!models/plant_disease_model.pth
+!models/plant_disease_cnn.pth
 models/checkpoints/
 models/*.ckpt
 outputs/
 scratch/
+

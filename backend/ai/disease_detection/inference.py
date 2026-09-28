@@ -52,7 +52,19 @@ class CNNDiseaseDetector:
         
         # Set default paths if not provided
         if model_path is None:
-            model_path = Path(__file__).parent / "models" / "plant_disease_model.pth"
+            default_path = Path(__file__).parent / "models" / "plant_disease_model.pth"
+            cnn_service_path = Path(__file__).parent.parent / "cnn" / "plant_disease_cnn.pth"
+            training_path = Path(__file__).resolve().parent.parent.parent.parent / "ai_training" / "models" / "best_model.pth"
+            
+            if default_path.exists():
+                model_path = default_path
+            elif cnn_service_path.exists():
+                model_path = cnn_service_path
+            elif training_path.exists():
+                model_path = training_path
+            else:
+                model_path = default_path
+
         if class_names_path is None:
             class_names_path = Path(__file__).parent / "models" / "class_names.json"
         if metadata_path is None:
@@ -61,6 +73,7 @@ class CNNDiseaseDetector:
         self.model_path = Path(model_path)
         self.class_names_path = Path(class_names_path)
         self.metadata_path = Path(metadata_path)
+
         
         # Try to load model on initialization
         self._load_model()
