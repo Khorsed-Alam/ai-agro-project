@@ -71,7 +71,7 @@ export const Layout: React.FC = () => {
         onMobileClose={() => setMobileNavOpen(false)}
       />
 
-      <div className="flex flex-col min-h-screen w-full lg:pl-60-sidebar">
+      <div className="flex flex-col min-h-screen w-full lg:pl-[240px]">
         <header
           className="fixed top-0 right-0 h-16 bg-surface-container-lowest z-40 flex items-center justify-between px-margin left-0 lg:left-[240px]"
           style={{
