@@ -13,7 +13,7 @@ import { useI18n } from '../i18n';
 import { AgroMap } from '../components/map/AgroMap';
 import { uploadToCloudinary } from '../services/cloudinary';
 import { apiService } from '../services/api';
-import type { Field, FieldImageRecord, FieldLandData, AssignmentRequest, AssignmentRecord } from '../services/ecosystem';
+import type { Field, FieldImageRecord, FieldLandData, AssignmentRequest, AssignmentRecord, FarmerRating } from '../services/ecosystem';
 import {
   getFarmerAssignedFields,
   submitFieldData,
@@ -25,6 +25,7 @@ import {
   rejectAssignmentRequest,
   unassignFarmerFromField,
   getFarmerAssignmentHistory,
+  getFarmerRatings,
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
 } from '../services/ecosystem';
@@ -90,6 +91,10 @@ export const FarmerDashboard: React.FC = () => {
   const [aiAnalysisResult, setAiAnalysisResult] = useState<string | null>(null);
   const [analyzingLeaf, setAnalyzingLeaf] = useState(false);
 
+  // Farmer Ratings & Reviews Received from Farm Owners
+  const [farmerRatings, setFarmerRatings] = useState<FarmerRating[]>([]);
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
+
   const loadFarmerData = async () => {
     try {
       const activeUid = user?.uid || 'farmer_01';
@@ -112,6 +117,10 @@ export const FarmerDashboard: React.FC = () => {
 
       const hist = await getFarmerAssignmentHistory(activeUid);
       setAssignmentHistory(hist);
+
+      // Load Farmer Ratings & Performance Reviews
+      const ratings = await getFarmerRatings(activeUid);
+      setFarmerRatings(ratings);
     } catch (err) {
       console.error('loadFarmerData error:', err);
     }
@@ -220,7 +229,6 @@ export const FarmerDashboard: React.FC = () => {
     setNotes('');
     loadFieldHistory(targetFieldId);
     notifyEcosystemChange();
-    if (false) console.log(assignedFields, fieldImages, handleSelectField);
     setTimeout(() => setDataSuccess(''), 4000);
   };
 
@@ -278,7 +286,6 @@ export const FarmerDashboard: React.FC = () => {
 
     loadFieldHistory(targetFieldId);
     notifyEcosystemChange();
-    if (false) console.log(assignedFields, fieldImages, handleSelectField);
   };
 
   // Trigger Disease CNN inference
@@ -299,6 +306,11 @@ export const FarmerDashboard: React.FC = () => {
     }
   };
 
+  const totalFarmerReviews = farmerRatings.length;
+  const avgFarmerRating = totalFarmerReviews > 0
+    ? Number((farmerRatings.reduce((sum, r) => sum + (r.rating || 5), 0) / totalFarmerReviews).toFixed(1))
+    : (userProfile?.averageRating || 5.0);
+
   return (
     <div className="px-margin-lg py-margin flex flex-col gap-space-xl max-w-[1600px] w-full mx-auto">
       {/* Top Banner */}
@@ -318,7 +330,24 @@ export const FarmerDashboard: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-center">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+          {/* Reputation & Rating Card */}
+          <button
+            type="button"
+            onClick={() => setShowReviewsModal(true)}
+            className="h-10 px-3.5 rounded-xl bg-surface-container-high border border-outline-variant/30 hover:border-amber-500/50 hover:bg-amber-500/10 transition-all flex items-center gap-2 cursor-pointer shadow-2xs"
+            title={t('farmerRating.myReviewsDescription')}
+          >
+            <div className="flex items-center gap-1 text-amber-500 text-sm font-bold">
+              <span className="text-base leading-none">★</span>
+              <span className="text-on-surface">{avgFarmerRating.toFixed(1)}</span>
+            </div>
+            <span className="text-xs text-on-surface-variant font-medium">
+              ({formatNumber(totalFarmerReviews)} {t('farmerRating.reviews')})
+            </span>
+            <span className="material-symbols-outlined text-[16px] text-on-surface-variant">arrow_forward</span>
+          </button>
+
           <button
             type="button"
             onClick={() => navigate('/messages')}
@@ -878,6 +907,117 @@ export const FarmerDashboard: React.FC = () => {
               >
                 <span className="material-symbols-outlined text-[16px]">person_remove</span>
                 <span>{isUnassigning ? t('farmerDashboard.unassigning', 'Unassigning...') : t('farmerDashboard.confirmUnassign', 'Confirm Unassign')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Farmer Reviews & Reputation Modal */}
+      {showReviewsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-surface-container-lowest w-full max-w-lg p-space-lg rounded-xl shadow-2xl flex flex-col gap-space-md border border-outline-variant/30 animate-in fade-in zoom-in-95 max-h-[85vh]">
+            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-sm shrink-0">
+                  {(userProfile?.fullName || 'F').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col">
+                  <h3 className="font-headline-md text-headline-md font-bold text-on-surface">
+                    {t('farmerRating.myReviews', 'My Received Reviews')}
+                  </h3>
+                  <span className="text-xs text-on-surface-variant font-medium">
+                    {t('farmerRating.myReviewsDescription', 'Ratings and qualitative feedback submitted by farm enterprise owners.')}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReviewsModal(false)}
+                className="text-on-surface-variant hover:text-on-surface text-lg cursor-pointer"
+                aria-label={t('accessibility.closeDialog')}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Score Banner */}
+            <div className="flex items-center justify-between p-3.5 bg-surface rounded-xl border border-outline-variant/20">
+              <div className="flex flex-col">
+                <span className="text-xs text-on-surface-variant font-medium">{t('farmerRating.overallRating', 'Overall Rating')}</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-amber-500 text-lg leading-none">★</span>
+                  <span className="text-lg font-bold text-on-surface">
+                    {avgFarmerRating.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-on-surface-variant font-normal">
+                    / 5.0
+                  </span>
+                </div>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-container text-secondary">
+                {t('farmerRating.basedOnReviews', '{count} Reviews', { count: formatNumber(farmerRatings.length) })}
+              </span>
+            </div>
+
+            {/* Reviews List */}
+            <div className="flex flex-col gap-3 overflow-y-auto max-h-[45vh] pr-1">
+              {farmerRatings.length === 0 ? (
+                <div className="py-8 text-center flex flex-col items-center justify-center gap-2 text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[32px] text-outline-variant">rate_review</span>
+                  <p className="text-xs font-medium">{t('farmerRating.noReviewsYet', 'No reviews or ratings recorded yet.')}</p>
+                </div>
+              ) : (
+                farmerRatings.map((r) => (
+                  <div
+                    key={r.ratingId || r.id}
+                    className="p-3 rounded-lg bg-surface border border-outline-variant/20 flex flex-col gap-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs text-on-surface">
+                          {r.ownerName || 'Farm Owner'}
+                        </span>
+                        {r.fieldName && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-secondary font-medium">
+                            {r.fieldName}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-on-surface-variant">
+                        {r.createdAt ? formatDate(r.createdAt) : ''}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-amber-500 text-xs">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <span key={i} className={i < r.rating ? 'text-amber-500' : 'text-outline-variant/40'}>
+                          ★
+                        </span>
+                      ))}
+                      <span className="ml-1 text-[11px] font-bold text-on-surface">
+                        {r.rating}.0
+                      </span>
+                    </div>
+
+                    {r.feedback && (
+                      <p className="text-xs text-on-surface-variant leading-relaxed bg-surface-container-lowest p-2 rounded border border-outline-variant/10">
+                        {r.feedback}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="flex items-center justify-end pt-space-xs border-t border-outline-variant/20">
+              <button
+                type="button"
+                onClick={() => setShowReviewsModal(false)}
+                className="h-8 px-4 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors cursor-pointer"
+              >
+                {t('common.close')}
               </button>
             </div>
           </div>
