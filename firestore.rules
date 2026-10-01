@@ -129,6 +129,13 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // Farmer Ratings: authenticated users can read/create; owners can manage
+    match /farmer_ratings/{ratingId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null &&
+        (resource == null || resource.data.ownerId == request.auth.uid);
+    }
+
     // Legacy logs collection
     match /logs/{logId} {
       allow read, write: if request.auth != null;

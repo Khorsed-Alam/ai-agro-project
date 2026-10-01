@@ -21,12 +21,28 @@ import type { GeoPolygon, GeoLineString } from '../components/map/AgroMap';
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
+export interface FarmerRating {
+  id?: string;
+  ratingId?: string;
+  farmerId: string;
+  farmerName: string;
+  ownerId: string;
+  ownerName: string;
+  rating: number; // 1 to 5
+  feedback?: string;
+  fieldId?: string;
+  fieldName?: string;
+  createdAt?: any;
+}
+
 export interface FarmerProfile {
   uid: string;
   fullName: string;
   email: string;
   role: 'farmer';
   assignedFieldsCount?: number;
+  averageRating?: number;
+  totalRatings?: number;
 }
 
 export interface Farm {
@@ -123,6 +139,7 @@ const LOCAL_FARMS_KEY = 'agroai_cache_farms';
 const LOCAL_FIELDS_KEY = 'agroai_cache_fields';
 const LOCAL_SUBS_KEY = 'agroai_cache_submissions';
 const LOCAL_IMGS_KEY = 'agroai_cache_images';
+const LOCAL_RATINGS_KEY = 'agroai_cache_ratings';
 
 function loadCache<T>(key: string, fallback: T): T {
   try {
@@ -148,6 +165,7 @@ function syncEcosystemCache(): void {
     localStorage.setItem(LOCAL_FIELDS_KEY, JSON.stringify(FALLBACK_FIELDS));
     localStorage.setItem(LOCAL_SUBS_KEY, JSON.stringify(inMemorySubmissions));
     localStorage.setItem(LOCAL_IMGS_KEY, JSON.stringify(inMemoryImages));
+    localStorage.setItem(LOCAL_RATINGS_KEY, JSON.stringify(inMemoryRatings));
   } catch {
     // Ignore storage quota
   }
@@ -155,10 +173,61 @@ function syncEcosystemCache(): void {
 
 // ─── Fallback Demo Data & In-Memory Cache Initialization ────────────────────────
 
+const DEFAULT_RATINGS: FarmerRating[] = [
+  {
+    id: 'rate_demo_01',
+    ratingId: 'rate_demo_01',
+    farmerId: 'farmer_01',
+    farmerName: 'Rahim Uddin',
+    ownerId: 'owner_demo',
+    ownerName: 'Green Valley Agriculture',
+    rating: 5,
+    feedback: 'Excellent work on cereal field moisture monitoring and timely irrigation cycles.',
+    fieldName: 'North Rice Field',
+    createdAt: new Date(Date.now() - 86400000 * 3).toISOString(),
+  },
+  {
+    id: 'rate_demo_02',
+    ratingId: 'rate_demo_02',
+    farmerId: 'farmer_01',
+    farmerName: 'Rahim Uddin',
+    ownerId: 'owner_demo',
+    ownerName: 'Green Valley Agriculture',
+    rating: 5,
+    feedback: 'Prompt N-P-K data logging. Followed precision drip recommendations perfectly.',
+    fieldName: 'North Rice Field',
+    createdAt: new Date(Date.now() - 86400000 * 8).toISOString(),
+  },
+  {
+    id: 'rate_demo_03',
+    ratingId: 'rate_demo_03',
+    farmerId: 'farmer_02',
+    farmerName: 'Karim Hossain',
+    ownerId: 'owner_demo',
+    ownerName: 'Green Valley Agriculture',
+    rating: 4,
+    feedback: 'Good attention to soil pH and disease scouting. Punctual telemetry updates.',
+    fieldName: 'East Tomato Sector',
+    createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
+  },
+  {
+    id: 'rate_demo_04',
+    ratingId: 'rate_demo_04',
+    farmerId: 'farmer_03',
+    farmerName: 'Hasan Mahmud',
+    ownerId: 'owner_demo',
+    ownerName: 'Green Valley Agriculture',
+    rating: 5,
+    feedback: 'Highly experienced and reliable. Thorough leaf inspection and quick reporting.',
+    fieldName: 'South Maize Zone',
+    createdAt: new Date(Date.now() - 86400000 * 12).toISOString(),
+  },
+];
+
 const FALLBACK_FARMERS: FarmerProfile[] = [
-  { uid: 'farmer_01', fullName: 'Rahim Uddin', email: 'rahim@agroai.edu', role: 'farmer', assignedFieldsCount: 2 },
-  { uid: 'farmer_02', fullName: 'Karim Hossain', email: 'karim@agroai.edu', role: 'farmer', assignedFieldsCount: 1 },
-  { uid: 'farmer_03', fullName: 'Hasan Mahmud', email: 'hasan@agroai.edu', role: 'farmer', assignedFieldsCount: 0 },
+  { uid: 'farmer_01', fullName: 'Rahim Uddin', email: 'rahim@agroai.edu', role: 'farmer', assignedFieldsCount: 2, averageRating: 5.0, totalRatings: 2 },
+  { uid: 'farmer_02', fullName: 'Karim Hossain', email: 'karim@agroai.edu', role: 'farmer', assignedFieldsCount: 1, averageRating: 4.0, totalRatings: 1 },
+  { uid: 'farmer_03', fullName: 'Hasan Mahmud', email: 'hasan@agroai.edu', role: 'farmer', assignedFieldsCount: 0, averageRating: 5.0, totalRatings: 1 },
 ];
 
 const DEFAULT_FARMS: Farm[] = [
@@ -400,6 +469,7 @@ const FALLBACK_FARMS: Farm[] = _isFirebaseReady ? [] : loadCache(LOCAL_FARMS_KEY
 const FALLBACK_FIELDS: Field[] = _isFirebaseReady ? [] : loadCache(LOCAL_FIELDS_KEY, DEFAULT_FIELDS);
 const inMemorySubmissions: FieldLandData[] = _isFirebaseReady ? [] : loadCache(LOCAL_SUBS_KEY, DEFAULT_LAND_DATA);
 const inMemoryImages: FieldImageRecord[] = _isFirebaseReady ? [] : loadCache(LOCAL_IMGS_KEY, DEFAULT_FIELD_IMAGES);
+const inMemoryRatings: FarmerRating[] = _isFirebaseReady ? [] : loadCache(LOCAL_RATINGS_KEY, DEFAULT_RATINGS);
 
 // ─── Ecosystem Firestore API ──────────────────────────────────────────────────
 
@@ -421,12 +491,118 @@ export async function getRegisteredFarmers(): Promise<FarmerProfile[]> {
         email: data.email || '',
         role: 'farmer',
         assignedFieldsCount: data.assignedFieldsCount || 0,
+        averageRating: typeof data.averageRating === 'number' ? data.averageRating : 0,
+        totalRatings: typeof data.totalRatings === 'number' ? data.totalRatings : 0,
       });
     });
     return farmers;
   } catch {
     return FALLBACK_FARMERS;
   }
+}
+
+/**
+ * Submit a rating & review for a farmer from a farm owner
+ */
+export async function submitFarmerRating(
+  ratingData: Omit<FarmerRating, 'id' | 'ratingId' | 'createdAt'>
+): Promise<{ success: boolean; ratingId?: string; error?: string }> {
+  const ratingId = `rate_${Date.now()}`;
+  const newRating: FarmerRating = {
+    ...ratingData,
+    id: ratingId,
+    ratingId,
+    createdAt: new Date().toISOString(),
+  };
+
+  inMemoryRatings.unshift(newRating);
+  syncEcosystemCache();
+
+  if (db) {
+    try {
+      await setDoc(doc(db, 'farmer_ratings', ratingId), {
+        ...newRating,
+        createdAt: serverTimestamp(),
+      });
+
+      // Recalculate average rating for farmer in Firestore
+      try {
+        const q = query(collection(db, 'farmer_ratings'), where('farmerId', '==', ratingData.farmerId));
+        const snap = await getDocs(q);
+        const scores: number[] = [];
+        snap.forEach((d) => {
+          const val = d.data().rating;
+          if (typeof val === 'number') scores.push(val);
+        });
+        if (scores.length > 0) {
+          const avg = Number((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1));
+          await setDoc(
+            doc(db, 'users', ratingData.farmerId),
+            { averageRating: avg, totalRatings: scores.length },
+            { merge: true }
+          );
+        }
+      } catch (err) {
+        console.warn('Could not update user average rating in Firestore:', err);
+      }
+    } catch (err: any) {
+      console.warn('Firestore rating save failed, using memory:', err);
+    }
+  }
+
+  notifyEcosystemChange();
+  return { success: true, ratingId };
+}
+
+/**
+ * Fetch all ratings & reviews for a specific farmer
+ */
+export async function getFarmerRatings(farmerId: string): Promise<FarmerRating[]> {
+  if (db) {
+    try {
+      const q = query(collection(db, 'farmer_ratings'), where('farmerId', '==', farmerId));
+      const snap = await getDocs(q);
+      const list: FarmerRating[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          ratingId: d.id,
+          farmerId: data.farmerId,
+          farmerName: data.farmerName || 'Farmer Worker',
+          ownerId: data.ownerId,
+          ownerName: data.ownerName || 'Farm Owner',
+          rating: data.rating || 5,
+          feedback: data.feedback || '',
+          fieldId: data.fieldId || '',
+          fieldName: data.fieldName || '',
+          createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt || new Date().toISOString(),
+        });
+      });
+      if (list.length > 0) {
+        return list.sort((a, b) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0));
+      }
+    } catch (err) {
+      console.warn('Firestore getFarmerRatings error, using memory fallback:', err);
+    }
+  }
+
+  return inMemoryRatings
+    .filter((r) => r.farmerId === farmerId)
+    .sort((a, b) => (new Date(b.createdAt).getTime() || 0) - (new Date(a.createdAt).getTime() || 0));
+}
+
+/**
+ * Calculate average rating and count for a farmer
+ */
+export async function getFarmerRatingSummary(farmerId: string): Promise<{ average: number; count: number }> {
+  const ratings = await getFarmerRatings(farmerId);
+  if (!ratings || ratings.length === 0) {
+    return { average: 0, count: 0 };
+  }
+  const sum = ratings.reduce((acc, r) => acc + (r.rating || 5), 0);
+  const average = Number((sum / ratings.length).toFixed(1));
+  return { average, count: ratings.length };
 }
 
 /**

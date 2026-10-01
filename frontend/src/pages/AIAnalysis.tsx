@@ -51,7 +51,6 @@ export const AIAnalysis: React.FC = () => {
   const [dtreeResult, setDtreeResult] = useState<any>(null);
   const [cspResult, setCspResult] = useState<any>(null);
   const [astarResult, setAstarResult] = useState<any>(null);
-  if (false) console.log(kmeansResult, dtreeResult, cspResult, astarResult);
 
   // Telemetry Logs Stream
   const [telemetryLogs, setTelemetryLogs] = useState<TelemetryLogEntry[]>([
@@ -92,39 +91,6 @@ export const AIAnalysis: React.FC = () => {
       delta: '0.9ms',
     },
   ]);
-
-  // Load Fields based on user role
-  const loadFields = async () => {
-    setLoading(true);
-    try {
-      let list: Field[] = [];
-      if (userRole === 'farmer' && user?.uid) {
-        list = await getFarmerAssignedFields(user.uid);
-      } else {
-        list = await getOwnerFields();
-      }
-
-      // If ecosystem list is empty, fallback to apiService
-      if (list.length === 0) {
-        const apiFields = await apiService.getFields();
-        list = apiFields as any;
-      }
-
-      setFields(list);
-      if (list.length > 0) {
-        setSelectedField(list[0]);
-        runFullPipeline(list[0]);
-      }
-    } catch (err) {
-      console.error('Error loading fields for AI Analysis:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadFields();
-  }, [user, userRole]);
 
   // Run or refresh analysis for a target field
   const runFullPipeline = async (field: Field) => {
@@ -179,6 +145,39 @@ export const AIAnalysis: React.FC = () => {
       // Memory fallback
     }
   };
+
+  // Load Fields based on user role
+  const loadFields = async () => {
+    setLoading(true);
+    try {
+      let list: Field[] = [];
+      if (userRole === 'farmer' && user?.uid) {
+        list = await getFarmerAssignedFields(user.uid);
+      } else {
+        list = await getOwnerFields();
+      }
+
+      // If ecosystem list is empty, fallback to apiService
+      if (list.length === 0) {
+        const apiFields = await apiService.getFields();
+        list = apiFields as any;
+      }
+
+      setFields(list);
+      if (list.length > 0) {
+        setSelectedField(list[0]);
+        runFullPipeline(list[0]);
+      }
+    } catch (err) {
+      console.error('Error loading fields for AI Analysis:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadFields();
+  }, [user, userRole]);
 
   // Field change handler
   const handleFieldChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

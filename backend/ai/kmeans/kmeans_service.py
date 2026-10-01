@@ -30,9 +30,10 @@ class KMeansService:
     def predict_cluster(self, soil_moisture: float, soil_ph: float, temperature: float, humidity: float, rainfall: float) -> dict:
         if self.is_trained and self.model is not None:
             try:
-                import numpy as np
-                features = np.array([[soil_moisture, soil_ph, temperature, humidity, rainfall]])
-                cluster_id = int(self.model.predict(features)[0])
+                import pandas as pd
+                cols = getattr(self.model, "feature_names_in_", ["soil_moisture", "soil_ph", "temperature", "humidity", "rainfall"])
+                df = pd.DataFrame([[soil_moisture, soil_ph, temperature, humidity, rainfall]], columns=cols)
+                cluster_id = int(self.model.predict(df)[0])
                 status_label = "Trained Model Cluster"
                 is_demo = False
             except Exception:
