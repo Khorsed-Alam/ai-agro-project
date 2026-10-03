@@ -23,6 +23,7 @@ import {
   getFieldData,
   submitFarmerRating,
   getFarmerRatings,
+  getHiredFarmerIdsForOwner,
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
 } from '../services/ecosystem';
@@ -87,6 +88,8 @@ export const OwnerDashboard: React.FC = () => {
   const [ratingFieldId, setRatingFieldId] = useState<string>('');
   const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
   const [ratingModalSuccess, setRatingModalSuccess] = useState<string>('');
+  const [ratingModalError, setRatingModalError] = useState<string>('');
+  const [hiredFarmerIds, setHiredFarmerIds] = useState<Set<string>>(new Set());
 
   const handleDeleteFieldConfirm = async () => {
     if (!fieldToDelete) return;
@@ -99,12 +102,18 @@ export const OwnerDashboard: React.FC = () => {
   };
 
   const handleOpenRateModal = (farmer: FarmerProfile, fieldId?: string) => {
+    const isHired = fields.some((f) => f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid) || hiredFarmerIds.has(farmer.uid);
+    if (!isHired) {
+      alert(t('farmerRating.onlyHiredCanRate', 'Only farm owners who have hired this farmer for work can submit ratings and comments.'));
+      return;
+    }
     setTargetFarmerForRate(farmer);
     setRatingScore(5);
     setRatingHover(0);
     setRatingFeedback('');
     setRatingFieldId(fieldId || (fields[0]?.fieldId || ''));
     setRatingModalSuccess('');
+    setRatingModalError('');
     setRateModalOpen(true);
   };
 
@@ -125,10 +134,16 @@ export const OwnerDashboard: React.FC = () => {
   const handleSubmitRating = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetFarmerForRate) return;
+    if (!ratingFeedback.trim()) {
+      setRatingModalError(t('farmerRating.commentRequired', 'Please provide a written comment about your experience with this farmer.'));
+      return;
+    }
+
     setIsSubmittingRating(true);
+    setRatingModalError('');
     const relatedField = fields.find((f) => f.fieldId === ratingFieldId || (f as any).id === ratingFieldId);
     
-    await submitFarmerRating({
+    const res = await submitFarmerRating({
       farmerId: targetFarmerForRate.uid,
       farmerName: targetFarmerForRate.fullName,
       ownerId: user?.uid || 'owner_demo',
@@ -140,11 +155,17 @@ export const OwnerDashboard: React.FC = () => {
     });
 
     setIsSubmittingRating(false);
-    setRatingModalSuccess(t('farmerRating.ratingSuccess', 'Rating submitted successfully!'));
+    if (!res.success) {
+      setRatingModalError(res.error || 'Failed to submit rating.');
+      return;
+    }
+
+    setRatingModalSuccess(t('farmerRating.ratingSuccess', 'Rating and comment submitted successfully!'));
     loadEcosystemData();
     setTimeout(() => {
       setRateModalOpen(false);
       setRatingModalSuccess('');
+      setRatingModalError('');
     }, 1200);
   };
 
@@ -157,6 +178,10 @@ export const OwnerDashboard: React.FC = () => {
       setFarms(farmList);
       setFields(fieldList);
       setFarmers(farmerList);
+
+      // Load hired farmer IDs for the active owner
+      const hiredList = await getHiredFarmerIdsForOwner(user?.uid || 'owner_demo');
+      setHiredFarmerIds(new Set(hiredList));
 
       // Select first field by default for detailed inspection if none selected
       if (fieldList.length > 0) {
@@ -524,17 +549,23 @@ export const OwnerDashboard: React.FC = () => {
                           : t('status.available')}
                       </span>
 
-                      {/* Rate Worker Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenRateModal(farmer, assignedFieldObj?.fieldId)}
-                        className="h-8 px-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
-                        title={t('farmerRating.rateWorker')}
-                        aria-label={t('farmerRating.rateWorker')}
-                      >
-                        <span className="material-symbols-outlined text-[15px]">hotel_class</span>
-                        <span>{t('farmerRating.rateFarmer')}</span>
-                      </button>
+                      {/* Rate Worker Button (ONLY if hired by owner) */}
+                      {isAssigned || hiredFarmerIds.has(farmer.uid) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRateModal(farmer, assignedFieldObj?.fieldId)}
+                          className="h-8 px-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title={t('farmerRating.rateWorker', 'Rate & Comment on Farmer')}
+                          aria-label={t('farmerRating.rateWorker', 'Rate & Comment on Farmer')}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">rate_review</span>
+                          <span>{t('farmerRating.rateFarmer', 'Rate & Comment')}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-on-surface-variant/60 italic px-1">
+                          {t('farmerRating.notHiredCannotRate', 'Hire to rate & comment')}
+                        </span>
+                      )}
 
                       <button
                         type="button"
@@ -942,6 +973,13 @@ export const OwnerDashboard: React.FC = () => {
               </div>
             )}
 
+            {ratingModalError && (
+              <div className="p-3 bg-error-container text-error rounded-lg text-xs font-semibold flex items-center gap-2 border border-error/30">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{ratingModalError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSubmitRating} className="flex flex-col gap-space-md">
               {/* Star Rating Selector */}
               <div className="flex flex-col gap-1.5 items-center text-center">
@@ -990,17 +1028,18 @@ export const OwnerDashboard: React.FC = () => {
                 </select>
               </div>
 
-              {/* Written Feedback */}
+              {/* Written Feedback & Comment */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-on-surface">
-                  {t('farmerRating.feedback', 'Written Feedback & Performance Notes')}
+                  {t('farmerRating.commentLabel', 'Written Comment & Performance Review')} *
                 </label>
                 <textarea
                   rows={3}
+                  required
                   value={ratingFeedback}
                   onChange={(e) => setRatingFeedback(e.target.value)}
-                  placeholder={t('farmerRating.feedbackPlaceholder', 'Share feedback about punctuality, irrigation care, crop maintenance, work quality...')}
-                  className="w-full bg-surface p-2.5 rounded-lg text-xs border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder={t('farmerRating.commentPlaceholder', 'Write your comment and performance review (e.g. communication, crop care, irrigation execution, work quality)...')}
+                  className="w-full bg-surface p-2.5 rounded-lg text-xs border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary resize-none"
                 />
               </div>
 
@@ -1140,17 +1179,25 @@ export const OwnerDashboard: React.FC = () => {
 
             {/* Modal Footer Actions */}
             <div className="flex items-center justify-between pt-space-xs border-t border-outline-variant/20">
-              <button
-                type="button"
-                onClick={() => {
-                  setReviewsModalOpen(false);
-                  handleOpenRateModal(targetFarmerForReviews);
-                }}
-                className="h-8 px-3 rounded-lg bg-primary-container text-on-primary-container text-xs font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[15px]">add</span>
-                <span>{t('farmerRating.rateFarmer', 'Rate Farmer')}</span>
-              </button>
+              {fields.some((f) => f.assignedFarmerId === targetFarmerForReviews.uid || (f as any).farmerId === targetFarmerForReviews.uid) ||
+              hiredFarmerIds.has(targetFarmerForReviews.uid) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewsModalOpen(false);
+                    handleOpenRateModal(targetFarmerForReviews);
+                  }}
+                  className="h-8 px-3 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                >
+                  <span className="material-symbols-outlined text-[15px]">rate_review</span>
+                  <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
+                </button>
+              ) : (
+                <span className="text-[11px] text-on-surface-variant flex items-center gap-1 italic">
+                  <span className="material-symbols-outlined text-[14px] text-primary">info</span>
+                  <span>{t('farmerRating.onlyHiredCanRate', 'Only owners who hired this farmer can rate.')}</span>
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setReviewsModalOpen(false)}

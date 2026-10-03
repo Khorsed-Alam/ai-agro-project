@@ -379,7 +379,17 @@ export const en = {
     fair: "Fair",
     good: "Good",
     veryGood: "Very Good",
-    excellent: "Excellent"
+    excellent: "Excellent",
+    onlyHiredCanRate: "Only farm owners who have hired this farmer for work can submit ratings and comments.",
+    hiredOnlyNotice: "You can only rate and comment on farmers who have worked on your fields.",
+    commentPlaceholder: "Write your comment and performance review (e.g. communication, crop care, irrigation execution, work quality)...",
+    commentLabel: "Written Comment & Performance Review",
+    rateAndComment: "Rate & Comment",
+    rateAndCommentFarmer: "Rate & Comment on Farmer",
+    addComment: "Write Review & Comment",
+    commentRequired: "Please provide a written comment about your experience with this farmer.",
+    notHiredCannotRate: "Hire to rate & comment",
+    verifiedEmployer: "Verified Employer"
   },
   ownerDashboard: {
     workspace: "Owner Workspace",

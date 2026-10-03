@@ -381,7 +381,17 @@ export const bn: TranslationResource = {
     fair: "মোটামুটি",
     good: "ভালো",
     veryGood: "খুব ভালো",
-    excellent: "চমৎকার"
+    excellent: "চমৎকার",
+    onlyHiredCanRate: "কেবলমাত্র যে খামার মালিকরা এই কৃষককে কাজের জন্য নিয়োগ করেছেন তারাই রেটিং ও মন্তব্য প্রদান করতে পারেন।",
+    hiredOnlyNotice: "আপনি কেবলমাত্র আপনার জমিতে কাজ করা কৃষকদের রেটিং ও মন্তব্য প্রদান করতে পারেন।",
+    commentPlaceholder: "কৃষকের কাজের মান, সময়ানুবর্তিতা, যোগাযোগ, সেচ এবং ফসলের যত্ন সম্পর্কে আপনার মন্তব্য লিখুন...",
+    commentLabel: "মন্তব্য ও লিখিত পর্যালোচনা",
+    rateAndComment: "রেটিং ও মন্তব্য",
+    rateAndCommentFarmer: "কৃষককে রেটিং ও মন্তব্য দিন",
+    addComment: "মন্তব্য ও রেটিং লিখুন",
+    commentRequired: "দয়া করে এই কৃষকের সাথে আপনার কাজের অভিজ্ঞতার উপর একটি মন্তব্য লিখুন।",
+    notHiredCannotRate: "রেটিং দিতে নিয়োগ করুন",
+    verifiedEmployer: "যাচাইকৃত নিয়োগকারী"
   },
   ownerDashboard: {
     workspace: "মালিকের ওয়ার্কস্পেস",

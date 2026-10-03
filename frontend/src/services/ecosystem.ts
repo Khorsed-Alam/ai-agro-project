@@ -610,14 +610,37 @@ export async function getRegisteredFarmers(): Promise<FarmerProfile[]> {
 }
 
 /**
- * Submit a rating & review for a farmer from a farm owner
+ * Submit a rating & review comment for a farmer from a farm owner.
+ * Business Rules:
+ * 1. An owner can ONLY rate and comment on farmers they have hired for work.
+ * 2. Written comment/feedback is required alongside the star rating.
  */
 export async function submitFarmerRating(
   ratingData: Omit<FarmerRating, 'id' | 'ratingId' | 'createdAt'>
 ): Promise<{ success: boolean; ratingId?: string; error?: string }> {
+  const activeOwnerId = ratingData.ownerId || 'owner_demo';
+
+  // Rule 1: Owner can ONLY rate farmers they have hired for work
+  const isHired = await hasOwnerHiredFarmer(activeOwnerId, ratingData.farmerId);
+  if (!isHired) {
+    return {
+      success: false,
+      error: 'You can only rate and comment on farmers you have hired for work.',
+    };
+  }
+
+  // Rule 2: Written comment / feedback is required alongside rating
+  if (!ratingData.feedback || ratingData.feedback.trim().length === 0) {
+    return {
+      success: false,
+      error: 'Please provide a written comment or performance feedback with your rating.',
+    };
+  }
+
   const ratingId = `rate_${Date.now()}`;
   const newRating: FarmerRating = {
     ...ratingData,
+    feedback: ratingData.feedback.trim(),
     id: ratingId,
     ratingId,
     createdAt: new Date().toISOString(),
@@ -1168,8 +1191,9 @@ export async function assignFarmerToField(
         assignedAt: serverTimestamp(),
       });
 
-      // Send notification document if assigned
+      // Send notification document if assigned & record hiring relation
       if (farmerId) {
+        recordOwnerHiredFarmer(ownerId || 'owner_demo', farmerId, fieldId);
         const notifId = `notif_${Date.now()}`;
         await setDoc(doc(db, 'notifications', notifId), {
           id: notifId,
@@ -1191,6 +1215,9 @@ export async function assignFarmerToField(
     }
   }
 
+  if (farmerId) {
+    recordOwnerHiredFarmer(ownerId || 'owner_demo', farmerId, fieldId);
+  }
   notifyEcosystemChange();
   return true;
 }
@@ -1512,6 +1539,162 @@ export interface AssignmentRecord {
 const inMemoryAssignmentRequests: AssignmentRequest[] = [];
 const inMemoryAssignments: AssignmentRecord[] = [];
 
+// ─── Hired Farmers Tracking (Owners can only rate farmers they hired) ─────────
+const LOCAL_HIRED_KEY = 'agroai_hired_farmers';
+
+export interface HiredRecord {
+  ownerId: string;
+  farmerId: string;
+  hiredAt: string;
+  fieldId?: string;
+}
+
+export function loadHiredCache(): HiredRecord[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_HIRED_KEY);
+    if (!raw) {
+      return [
+        { ownerId: 'owner_demo', farmerId: 'farmer_01', hiredAt: new Date().toISOString(), fieldId: 'field_north_rice' },
+        { ownerId: 'owner_demo', farmerId: 'farmer_02', hiredAt: new Date().toISOString(), fieldId: 'field_south_corn' },
+      ];
+    }
+    return JSON.parse(raw);
+  } catch {
+    return [
+      { ownerId: 'owner_demo', farmerId: 'farmer_01', hiredAt: new Date().toISOString(), fieldId: 'field_north_rice' },
+      { ownerId: 'owner_demo', farmerId: 'farmer_02', hiredAt: new Date().toISOString(), fieldId: 'field_south_corn' },
+    ];
+  }
+}
+
+export function saveHiredCache(records: HiredRecord[]) {
+  try {
+    localStorage.setItem(LOCAL_HIRED_KEY, JSON.stringify(records));
+  } catch (err) {
+    console.warn('Could not save hired cache to localStorage:', err);
+  }
+}
+
+export function recordOwnerHiredFarmer(ownerId: string, farmerId: string, fieldId?: string) {
+  if (!ownerId || !farmerId) return;
+  const list = loadHiredCache();
+  const exists = list.some(
+    (r) => (r.ownerId === ownerId || (!r.ownerId && ownerId === 'owner_demo')) && r.farmerId === farmerId
+  );
+  if (!exists) {
+    list.unshift({ ownerId, farmerId, hiredAt: new Date().toISOString(), fieldId });
+    saveHiredCache(list);
+  }
+}
+
+/**
+ * Check if a farm owner has hired (currently or historically) a specific farmer.
+ * Business Rule: Farm owners can ONLY rate and comment on farmers they have hired for work!
+ */
+export async function hasOwnerHiredFarmer(ownerId: string, farmerId: string): Promise<boolean> {
+  if (!farmerId) return false;
+  const activeOwnerId = ownerId || 'owner_demo';
+
+  // 1. Check currently assigned fields
+  const fields = await getOwnerFields();
+  const isCurrentlyAssigned = fields.some((f) => {
+    const belongsToOwner = !f.ownerId || f.ownerId === activeOwnerId || activeOwnerId === 'owner_demo';
+    const hasWorker = f.assignedFarmerId === farmerId || (f as any).farmerId === farmerId;
+    return belongsToOwner && hasWorker;
+  });
+  if (isCurrentlyAssigned) return true;
+
+  // 2. Check local hired cache
+  const hiredCache = loadHiredCache();
+  const cachedHired = hiredCache.some(
+    (r) => (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) && r.farmerId === farmerId
+  );
+  if (cachedHired) return true;
+
+  // 3. Check in-memory assignments and requests
+  const memoryHired = inMemoryAssignments.some(
+    (a) => a.farmerId === farmerId && (a.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !a.ownerId)
+  );
+  if (memoryHired) return true;
+
+  const requestHired = inMemoryAssignmentRequests.some(
+    (r) => r.farmerId === farmerId && (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) && r.status === 'approved'
+  );
+  if (requestHired) return true;
+
+  // 4. Check Firestore collections if available
+  if (db) {
+    try {
+      const qAssignments = query(
+        collection(db, 'assignments'),
+        where('farmerId', '==', farmerId),
+        where('ownerId', '==', activeOwnerId)
+      );
+      const snap1 = await getDocs(qAssignments);
+      if (!snap1.empty) return true;
+
+      const qFieldAssignments = query(
+        collection(db, 'field_assignments'),
+        where('farmerId', '==', farmerId),
+        where('ownerId', '==', activeOwnerId)
+      );
+      const snap2 = await getDocs(qFieldAssignments);
+      if (!snap2.empty) return true;
+
+      const qRequests = query(
+        collection(db, 'assignment_requests'),
+        where('farmerId', '==', farmerId),
+        where('ownerId', '==', activeOwnerId),
+        where('status', '==', 'approved')
+      );
+      const snap3 = await getDocs(qRequests);
+      if (!snap3.empty) return true;
+    } catch (err) {
+      console.warn('Firestore hasOwnerHiredFarmer check error:', err);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Returns all farmer IDs that have been hired by the given owner (active or past)
+ */
+export async function getHiredFarmerIdsForOwner(ownerId: string): Promise<string[]> {
+  const activeOwnerId = ownerId || 'owner_demo';
+  const hiredSet = new Set<string>();
+
+  // 1. Current fields
+  const fields = await getOwnerFields();
+  fields.forEach((f) => {
+    const belongsToOwner = !f.ownerId || f.ownerId === activeOwnerId || activeOwnerId === 'owner_demo';
+    const workerId = f.assignedFarmerId || (f as any).farmerId;
+    if (belongsToOwner && workerId) hiredSet.add(workerId);
+  });
+
+  // 2. Local cache
+  const cached = loadHiredCache();
+  cached.forEach((r) => {
+    if (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) {
+      if (r.farmerId) hiredSet.add(r.farmerId);
+    }
+  });
+
+  // 3. Memory assignments & requests
+  inMemoryAssignments.forEach((a) => {
+    if (a.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !a.ownerId) {
+      if (a.farmerId) hiredSet.add(a.farmerId);
+    }
+  });
+  inMemoryAssignmentRequests.forEach((r) => {
+    if ((r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) && r.status === 'approved') {
+      if (r.farmerId) hiredSet.add(r.farmerId);
+    }
+  });
+
+  return Array.from(hiredSet);
+}
+
 /**
  * Get active assignment for a farmer (returns null if none)
  * Business Rule: One farmer = one active field at a time
@@ -1808,7 +1991,8 @@ export async function approveAssignmentRequest(requestId: string): Promise<{ suc
         assignedAt: serverTimestamp(),
       });
 
-      // Update field with assigned farmer
+      // Update field with assigned farmer & record hiring relation
+      recordOwnerHiredFarmer(request.ownerId || 'owner_demo', request.farmerId, request.fieldId);
       await assignFarmerToField(request.fieldId, request.farmerId, request.farmerName, request.ownerId);
 
       // Notify owner
