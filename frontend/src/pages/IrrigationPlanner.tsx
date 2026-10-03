@@ -324,96 +324,40 @@ export const IrrigationPlanner: React.FC = () => {
           </div>
         </div>
 
-        {/* Right 4 Cols: Mathematical Formulation & CSP Theory Panel */}
+        {/* Right 4 Cols: Irrigation Controls & Dispatch Panel */}
         <div className="xl:col-span-4 flex flex-col gap-space-lg">
           <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col gap-space-md">
             <div className="flex items-center justify-between pb-space-sm border-b border-surface-container-high">
               <div className="flex items-center gap-space-xs">
-                <span className="material-symbols-outlined text-primary text-[20px]">functions</span>
-                <h3 className="font-headline-sm text-headline-sm text-primary">{t('irrigation.mathematicalFormulation')}</h3>
+                <span className="material-symbols-outlined text-primary text-[20px]">tune</span>
+                <h3 className="font-headline-sm text-headline-sm text-primary">
+                  {t('irrigation.dispatchControls', 'Irrigation Controls')}
+                </h3>
               </div>
-              <span className="font-data-mono text-label-sm bg-primary-fixed text-on-primary-fixed px-space-xs py-0.5 rounded">
-                {t('irrigation.cspModel', 'CSP Model v4.2')}
+              <span className="font-data-mono text-label-sm bg-secondary-fixed text-on-secondary-fixed-variant px-space-xs py-0.5 rounded font-semibold">
+                {t('irrigation.liveSolver', 'Active')}
               </span>
             </div>
 
-            {/* Variable Set Notation */}
-            <div className="bg-surface-container p-space-md rounded-lg font-data-mono text-body-sm text-primary space-y-1">
-              <div className="font-semibold text-on-surface-variant text-label-sm uppercase tracking-wider">
-                {t('irrigation.formalStateSpace')}
-              </div>
-              <div>
-                <span className="font-semibold text-primary">{t('irrigation.variables', 'Variables:')}</span> V = {'{F_i, T_start_j, P_k, Q_m}'}
-              </div>
-              <div className="text-on-surface-variant text-label-md">
-                {t('irrigation.variableDefinitions', 'F = Fields, T = Slot Domain (15m), P = Pump Set, Q = Volumetric Discharge')}
-              </div>
-            </div>
-
-            {/* Strict Constraints List */}
-            <div className="space-y-space-sm">
-              <span className="font-label-sm text-label-sm uppercase tracking-wider font-semibold text-on-surface-variant">
-                {t('irrigation.hardConstraints')}
-              </span>
-              <div className="p-space-md rounded-lg bg-surface-container-low flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-data-mono text-data-mono font-semibold text-primary">
-                    {t('irrigation.flowThresholdConstraint', 'Constraint C1: Flow Threshold')}
-                  </span>
-                  <span className="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
-                </div>
-                <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  {t('irrigation.simultaneousPumpConstraint', 'Simultaneous Pump Capacity ≤ Max Reservoir Discharge:')}
-                </p>
-                <div className="font-data-mono text-label-md bg-surface-container-lowest p-space-xs rounded text-primary font-semibold">
-                  ∑ Flow(P_k(t)) ≤ 300 L/min ∀ t ∈ T
-                </div>
-              </div>
-
-              <div className="p-space-md rounded-lg bg-surface-container-low flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-data-mono text-data-mono font-semibold text-primary">
-                    {t('irrigation.environmentalPruningConstraint', 'Constraint C2: Environmental Pruning')}
-                  </span>
-                  <span className="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
-                </div>
-                <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  {t('irrigation.sprayRestrictionConstraint', 'No overhead spray when ambient temperature > 30°C or wind speed > 20 km/h:')}
-                </p>
-                <div className="font-data-mono text-label-md bg-surface-container-lowest p-space-xs rounded text-primary font-semibold">
-                  Method(F_i) = Spray → Temp(t) ≤ 30°C ∧ Wind(t) ≤ 20 km/h
-                </div>
-              </div>
-
-              <div className="p-space-md rounded-lg bg-surface-container-low flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-data-mono text-data-mono font-semibold text-primary">
-                    {t('irrigation.pathologicalSafeguardConstraint', 'Constraint C3: Pathological Safeguard')}
-                  </span>
-                  <span className="material-symbols-outlined text-secondary text-[16px]">check_circle</span>
-                </div>
-                <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  {t('irrigation.sprinklerExclusionConstraint', 'Field C-4 strictly excluded from overhead sprinkler due to fungal spore vulnerability:')}
-                </p>
-                <div className="font-data-mono text-label-md bg-surface-container-lowest p-space-xs rounded text-error font-semibold">
-                  F_C-4 ∩ {'{Sprinkler, Pivot}'} = ∅ [Domain Eliminated]
-                </div>
-              </div>
-            </div>
-
-            {/* Arc Consistency AC-3 Metrics */}
+            {/* Operational Summary */}
             <div className="bg-surface-container p-space-md rounded-lg space-y-space-xs">
               <div className="flex justify-between items-center text-label-sm font-label-sm">
-                <span className="text-on-surface-variant font-medium">{t('irrigation.domainPruningDepth')}</span>
-                <span className="font-data-mono font-semibold text-primary">{t('irrigation.statesRemoved', { value: formatNumber(84.2, { maximumFractionDigits: 1 }) })}</span>
-              </div>
-              <div className="flex justify-between items-center text-label-sm font-label-sm">
-                <span className="text-on-surface-variant font-medium">{t('irrigation.backtrackingNodes')}</span>
-                <span className="font-data-mono font-semibold text-primary">{t('irrigation.iterations', { count: formatNumber(18) })}</span>
-              </div>
-              <div className="flex justify-between items-center text-label-sm font-label-sm">
                 <span className="text-on-surface-variant font-medium">{t('irrigation.waterEfficiency')}</span>
-                <span className="font-data-mono font-semibold text-secondary">{t('irrigation.efficiencyGain', { value: formatNumber(19.4, { maximumFractionDigits: 1 }) })}</span>
+                <span className="font-data-mono font-semibold text-secondary">
+                  {t('irrigation.efficiencyGain', { value: formatNumber(19.4, { maximumFractionDigits: 1 }) })}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-label-sm font-label-sm">
+                <span className="text-on-surface-variant font-medium">{t('irrigation.targetDemand')}</span>
+                <span className="font-data-mono font-semibold text-primary">
+                  {formatNumber(2450)} L
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-label-sm font-label-sm">
+                <span className="text-on-surface-variant font-medium">{t('irrigation.activePumps')}</span>
+                <span className="font-data-mono font-semibold text-secondary">
+                  {formatNumber(2)} / {formatNumber(3)} {t('irrigation.available')}
+                </span>
               </div>
             </div>
 

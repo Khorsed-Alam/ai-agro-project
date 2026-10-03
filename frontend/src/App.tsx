@@ -23,6 +23,7 @@ import { Resources } from './pages/Resources';
 import { History } from './pages/History';
 import { Settings } from './pages/Settings';
 import { ChatPage } from './pages/ChatPage';
+import { Farmers } from './pages/Farmers';
 
 export const App: React.FC = () => {
   return (
@@ -46,6 +47,9 @@ export const App: React.FC = () => {
             {/* Primary AgroAI Dashboard (Restored from Stitch design) */}
             <Route index element={<Dashboard />} />
             <Route path="dashboard" element={<Dashboard />} />
+
+            {/* Farmers Directory & Hiring */}
+            <Route path="farmers" element={<Farmers />} />
 
             {/* Extension Role Workspaces */}
             <Route path="owner-dashboard" element={<OwnerDashboard />} />
