@@ -570,39 +570,36 @@ const DEFAULT_FIELD_IMAGES: FieldImageRecord[] = [
   },
 ];
 
-// Initialize live memory stores from localStorage if present.
-// If Firebase IS configured (live DB), clear any stale demo cache so we start clean.
-function clearDemoCache(): void {
-  try {
-    // Remove any stale demo/seed data that may have been cached from a previous session
-    localStorage.removeItem(LOCAL_FARMS_KEY);
-    localStorage.removeItem(LOCAL_FIELDS_KEY);
-    localStorage.removeItem(LOCAL_SUBS_KEY);
-    localStorage.removeItem(LOCAL_IMGS_KEY);
-  } catch {
-    // Ignore
-  }
-}
+// Keep the built-in demo/fallback dataset available even when Firebase is
+// configured but Firestore access is denied by security rules. In that case the
+// app should fall back to local demo data instead of wiping the only valid data source.
 
-// Detect whether Firebase is configured by checking env vars directly (avoid circular import)
-const _isFirebaseReady = Boolean(
-  (import.meta as any).env?.VITE_FIREBASE_API_KEY &&
-  (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID &&
-  (import.meta as any).env?.VITE_FIREBASE_API_KEY !== '' &&
-  (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID !== '' &&
-  (import.meta as any).env?.VITE_FIREBASE_API_KEY !== 'demo-api-key'
-);
+const fallbackFarms = (): Farm[] => {
+  const cached = loadCache(LOCAL_FARMS_KEY, DEFAULT_FARMS);
+  return cached.length > 0 ? cached : DEFAULT_FARMS;
+};
+const fallbackFields = (): Field[] => {
+  const cached = loadCache(LOCAL_FIELDS_KEY, DEFAULT_FIELDS);
+  return cached.length > 0 ? cached : DEFAULT_FIELDS;
+};
+const fallbackSubmissions = (): FieldLandData[] => {
+  const cached = loadCache(LOCAL_SUBS_KEY, DEFAULT_LAND_DATA);
+  return cached.length > 0 ? cached : DEFAULT_LAND_DATA;
+};
+const fallbackImages = (): FieldImageRecord[] => {
+  const cached = loadCache(LOCAL_IMGS_KEY, DEFAULT_FIELD_IMAGES);
+  return cached.length > 0 ? cached : DEFAULT_FIELD_IMAGES;
+};
+const fallbackRatings = (): FarmerRating[] => {
+  const cached = loadCache(LOCAL_RATINGS_KEY, DEFAULT_RATINGS);
+  return cached.length > 0 ? cached : DEFAULT_RATINGS;
+};
 
-// When Firebase is configured, clear stale localStorage demo data
-if (_isFirebaseReady) {
-  clearDemoCache();
-}
-
-const FALLBACK_FARMS: Farm[] = _isFirebaseReady ? [] : loadCache(LOCAL_FARMS_KEY, DEFAULT_FARMS);
-const FALLBACK_FIELDS: Field[] = _isFirebaseReady ? [] : loadCache(LOCAL_FIELDS_KEY, DEFAULT_FIELDS);
-const inMemorySubmissions: FieldLandData[] = _isFirebaseReady ? [] : loadCache(LOCAL_SUBS_KEY, DEFAULT_LAND_DATA);
-const inMemoryImages: FieldImageRecord[] = _isFirebaseReady ? [] : loadCache(LOCAL_IMGS_KEY, DEFAULT_FIELD_IMAGES);
-const inMemoryRatings: FarmerRating[] = _isFirebaseReady ? [] : loadCache(LOCAL_RATINGS_KEY, DEFAULT_RATINGS);
+const FALLBACK_FARMS: Farm[] = fallbackFarms();
+const FALLBACK_FIELDS: Field[] = fallbackFields();
+const inMemorySubmissions: FieldLandData[] = fallbackSubmissions();
+const inMemoryImages: FieldImageRecord[] = fallbackImages();
+const inMemoryRatings: FarmerRating[] = fallbackRatings();
 
 // ─── Ecosystem Firestore API ──────────────────────────────────────────────────
 
