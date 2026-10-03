@@ -51,8 +51,8 @@ export const AIAnalysis: React.FC = () => {
   const [dtreeResult, setDtreeResult] = useState<any>(null);
   const [cspResult, setCspResult] = useState<any>(null);
   const [astarResult, setAstarResult] = useState<any>(null);
+  void { kmeansResult, dtreeResult, cspResult, astarResult };
 
-  // Telemetry Logs Stream
   const [telemetryLogs, setTelemetryLogs] = useState<TelemetryLogEntry[]>([
     {
       id: 'log_1',

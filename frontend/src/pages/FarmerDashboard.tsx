@@ -439,6 +439,26 @@ export const FarmerDashboard: React.FC = () => {
       {/* ── My Assigned Field Card (Section 21, 30, 34) ────────────────────── */}
       {selectedField ? (
         <section className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 flex flex-col gap-space-md">
+          {assignedFields.length > 1 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-outline-variant/20">
+              <span className="text-xs font-semibold text-on-surface-variant shrink-0">{t('fields.fields', 'Fields')}:</span>
+              {assignedFields.map((f) => {
+                const isSelected = (f.fieldId && f.fieldId === selectedField.fieldId) || ((f as any).id && (f as any).id === (selectedField as any).id);
+                return (
+                  <button
+                    key={f.fieldId || (f as any).id}
+                    type="button"
+                    onClick={() => handleSelectField(f)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
+                      isSelected ? 'bg-primary text-on-primary' : 'bg-surface-container text-on-surface hover:bg-surface-container-high'
+                    }`}
+                  >
+                    {f.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm border-b border-outline-variant/20 pb-space-xs">
             <div className="flex flex-col">
               <span className="text-xs font-semibold text-secondary uppercase tracking-wider">
@@ -809,6 +829,22 @@ export const FarmerDashboard: React.FC = () => {
                       {sub.notes && <p className="italic text-on-surface-variant">"{sub.notes}"</p>}
                     </div>
                   ))}
+                </div>
+              )}
+
+              {fieldImages.length > 0 && (
+                <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-outline-variant/20">
+                  <h4 className="font-semibold text-xs text-on-surface">
+                    {t('farmerDashboard.inspectionPhotos', 'Inspection Photos ({count})', { count: formatNumber(fieldImages.length) })}
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {fieldImages.map((img, idx) => (
+                      <div key={img.id || idx} className="rounded-lg overflow-hidden border border-outline-variant/30 bg-surface">
+                        <img src={img.imageUrl} alt={img.caption || t('common.image')} className="w-full h-24 object-cover" />
+                        {img.caption && <p className="text-[10px] p-1 truncate text-on-surface-variant">{img.caption}</p>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

@@ -124,12 +124,7 @@ AgroAI provides a role-based agricultural management system supporting two main 
 * `/ai-analysis` — K-Means cluster scatter plot, Decision Engine panel, algorithm triggers.
 * `/disease-detection` — Leaf image upload, OpenCV pipeline visualizer, diagnostic results.
 * `/irrigation-planner` — Water reservoir bento, 24h Gantt dispatch timeline, AC-3 math formulation card.
-* `/algorithms` — Educational lab covering BFS, DFS, A*, AC-3, K-Means, Decision Tree, CNN, CSP.
 * `/resources` — Sensor fleet registry, IoT probes, pump controllers, LoRaWAN gateway.
 * `/history` — Immutable audit stream, search/filters, SHA-256 sealed record inspector.
 * `/settings` — Enterprise configuration dock, Farm Info form, AI preference toggles, Firebase health ping, language and theme preferences.
-* `/irrigation-planner` — Water reservoir bento, 24h Gantt dispatch timeline, AC-3 math formulation card.
-* `/algorithms` — Educational lab covering BFS, DFS, A*, AC-3, K-Means, Decision Tree, CNN, CSP.
-* `/resources` — Sensor fleet registry, IoT probes, pump controllers, LoRaWAN gateway.
-* `/history` — Immutable audit stream, search/filters, SHA-256 sealed record inspector.
-* `/settings` — Enterprise configuration dock, Farm Info form, AI preference toggles, Firebase health ping.
+* `/messages` — 1:1 real-time chat between farm owners and workers.

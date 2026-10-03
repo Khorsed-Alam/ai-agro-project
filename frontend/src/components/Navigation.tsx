@@ -47,7 +47,6 @@ export const Navigation: React.FC<NavigationProps> = ({ health, mobileOpen = fal
         { name: t('navigation.aiAnalysis'), path: '/ai-analysis', icon: 'memory', key: 'aiAnalysis' },
         { name: t('navigation.diseaseDetection'), path: '/disease-detection', icon: 'filter_center_focus', key: 'diseaseDetection' },
         { name: t('navigation.irrigationPlanner'), path: '/irrigation-planner', icon: 'water_drop', key: 'irrigationPlanner' },
-        { name: t('navigation.algorithmsAndTheory'), path: '/algorithms', icon: 'menu_book', key: 'algorithmsAndTheory' },
       ]
     },
     {
