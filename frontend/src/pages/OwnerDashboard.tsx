@@ -27,6 +27,7 @@ import {
   getFieldAssignedWorkers,
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
+  freeFarmerFromOwner,
 } from '../services/ecosystem';
 
 const growthStageTranslationKeys: Record<string, string> = {
@@ -128,6 +129,44 @@ export const OwnerDashboard: React.FC = () => {
     setRatingModalSuccess('');
     setRatingModalError('');
     setRateModalOpen(true);
+  };
+
+  const [freeingFarmerId, setFreeingFarmerId] = useState<string | null>(null);
+
+  const handleFreeFarmer = async (farmer: FarmerProfile) => {
+    const assignedFieldsList = fields.filter((f) =>
+      getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
+    );
+    const fieldNames = assignedFieldsList.map((f) => f.name).join(', ');
+    const confirmRelease = window.confirm(
+      t(
+        'farmers.freeFarmerConfirm',
+        `Work finished? ${farmer.fullName} will be removed from your fields${fieldNames ? ` (${fieldNames})` : ''} and become available for other owners to hire.`,
+        { farmerName: farmer.fullName, fields: fieldNames }
+      )
+    );
+    if (!confirmRelease) return;
+
+    setFreeingFarmerId(farmer.uid);
+    try {
+      const activeOwnerId = user?.uid || 'owner_demo';
+      const res = await freeFarmerFromOwner(activeOwnerId, farmer.uid, farmer.fullName);
+      if (res.success) {
+        alert(
+          t('farmers.freeFarmerSuccess', `${farmer.fullName} has been freed and is now available for hire.`, {
+            farmerName: farmer.fullName,
+          })
+        );
+        notifyEcosystemChange();
+        await loadEcosystemData();
+      } else {
+        alert(res.error || 'Failed to free farmer');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Error freeing farmer');
+    } finally {
+      setFreeingFarmerId(null);
+    }
   };
 
   const handleOpenReviewsModal = async (farmer: FarmerProfile) => {
@@ -615,6 +654,19 @@ export const OwnerDashboard: React.FC = () => {
                         >
                           <span className="material-symbols-outlined text-[15px]">rate_review</span>
                           <span>{t('farmerRating.rateFarmer', 'Rate & Comment')}</span>
+                        </button>
+
+                        {/* Finish Work & Free Farmer Button */}
+                        <button
+                          type="button"
+                          disabled={freeingFarmerId === farmer.uid}
+                          onClick={() => handleFreeFarmer(farmer)}
+                          className="h-8 px-2.5 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600/30 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                          aria-label={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">task_alt</span>
+                          <span>{t('farmers.freeFarmerBtn', 'Finish & Free')}</span>
                         </button>
 
                         <button

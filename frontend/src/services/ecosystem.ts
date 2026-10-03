@@ -610,35 +610,54 @@ const inMemoryRatings: FarmerRating[] = _isFirebaseReady ? [] : loadCache(LOCAL_
  * Fetch all registered users with role == 'farmer'
  */
 export async function getRegisteredFarmers(): Promise<FarmerProfile[]> {
-  if (!db) return FALLBACK_FARMERS;
-  try {
-    const q = query(collection(db, 'users'), where('role', '==', 'farmer'));
-    const snap = await getDocs(q);
-    const farmers: FarmerProfile[] = [];
-    snap.forEach((docSnap) => {
-      const data = docSnap.data();
-      farmers.push({
-        uid: docSnap.id,
-        fullName: data.fullName || data.displayName || 'Farmer Worker',
-        email: data.email || '',
-        role: 'farmer',
-        assignedFieldsCount: data.assignedFieldsCount || 0,
-        averageRating: typeof data.averageRating === 'number' ? data.averageRating : 5.0,
-        totalRatings: typeof data.totalRatings === 'number' ? data.totalRatings : 1,
-        phone: data.phone || '+1 (555) 349-1021',
-        location: data.location || 'Salinas Valley Agricultural Zone',
-        experienceYears: data.experienceYears || 6,
-        specialization: Array.isArray(data.specialization) && data.specialization.length > 0 ? data.specialization : ['Field Cultivation', 'Irrigation'],
-        bio: data.bio || 'Dedicated agricultural worker specialized in smart farm monitoring and crop health telemetry.',
-        hourlyRate: data.hourlyRate || '$115 / day',
-        avatarUrl: data.avatarUrl,
-        verified: data.verified ?? true,
+  let list: FarmerProfile[] = [];
+  if (!db) {
+    list = [...FALLBACK_FARMERS];
+  } else {
+    try {
+      const q = query(collection(db, 'users'), where('role', '==', 'farmer'));
+      const snap = await getDocs(q);
+      const farmers: FarmerProfile[] = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        farmers.push({
+          uid: docSnap.id,
+          fullName: data.fullName || data.displayName || 'Farmer Worker',
+          email: data.email || '',
+          role: 'farmer',
+          assignedFieldsCount: data.assignedFieldsCount || 0,
+          averageRating: typeof data.averageRating === 'number' ? data.averageRating : 5.0,
+          totalRatings: typeof data.totalRatings === 'number' ? data.totalRatings : 1,
+          phone: data.phone || '+1 (555) 349-1021',
+          location: data.location || 'Salinas Valley Agricultural Zone',
+          experienceYears: data.experienceYears || 6,
+          specialization: Array.isArray(data.specialization) && data.specialization.length > 0 ? data.specialization : ['Field Cultivation', 'Irrigation'],
+          bio: data.bio || 'Dedicated agricultural worker specialized in smart farm monitoring and crop health telemetry.',
+          hourlyRate: data.hourlyRate || '$115 / day',
+          avatarUrl: data.avatarUrl,
+          verified: data.verified ?? true,
+        });
       });
-    });
-    return farmers.length > 0 ? farmers : FALLBACK_FARMERS;
-  } catch {
-    return FALLBACK_FARMERS;
+      list = farmers.length > 0 ? farmers : [...FALLBACK_FARMERS];
+    } catch {
+      list = [...FALLBACK_FARMERS];
+    }
   }
+
+  // Cross-reference with all fields to keep assignedFieldsCount completely accurate and synchronized
+  try {
+    const allFields = await getOwnerFields();
+    list.forEach((farmer) => {
+      const actualCount = allFields.filter((f) =>
+        getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
+      ).length;
+      farmer.assignedFieldsCount = actualCount;
+    });
+  } catch {
+    // ignore
+  }
+
+  return list;
 }
 
 /**
@@ -1008,8 +1027,9 @@ export async function getOwnerFields(ownerId?: string): Promise<Field[]> {
     
     const dbFields: Field[] = [];
     snap.forEach((d) => {
-      const data = d.data() as any;
-      const fId = data.farmId || data.fieldId || d.id;
+      const data = d.data() || {};
+      const fId = data.fieldId || data.id || d.id;
+      const farmId = data.farmId || '';
       const fOwner = data.ownerId || data.userId || '';
       const assignedId = data.assignedFarmerId || data.farmerId || data.assignedTo || null;
       const assignedName = data.assignedFarmerName || data.farmerName || null;
@@ -1017,6 +1037,7 @@ export async function getOwnerFields(ownerId?: string): Promise<Field[]> {
         ...data,
         fieldId: fId,
         id: fId,
+        farmId: farmId,
         docId: d.id,
         assignedFarmerId: assignedId,
         assignedFarmerName: assignedName,
@@ -1026,15 +1047,26 @@ export async function getOwnerFields(ownerId?: string): Promise<Field[]> {
       } as unknown as Field);
     });
     
-    // DB is reachable — return only real DB fields (no demo data injected)
+    if (dbFields.length === 0) {
+      return ownerId
+        ? FALLBACK_FIELDS.filter((f) => f.ownerId === ownerId || (!f.ownerId && ownerId === 'owner_demo'))
+        : FALLBACK_FIELDS;
+    }
+
     const filtered = ownerId
-      ? dbFields.filter((f) => f.ownerId === ownerId || (f as any).userId === ownerId)
+      ? dbFields.filter((f) => {
+          if (f.ownerId === ownerId || (f as any).userId === ownerId) return true;
+          if (ownerId === 'owner_demo' && (!f.ownerId || f.ownerId === 'owner_demo')) return true;
+          return false;
+        })
       : dbFields;
 
     return filtered;
   } catch (err) {
     console.error('getOwnerFields Firestore error:', err);
-    return FALLBACK_FIELDS;
+    return ownerId
+      ? FALLBACK_FIELDS.filter((f) => f.ownerId === ownerId || (!f.ownerId && ownerId === 'owner_demo'))
+      : FALLBACK_FIELDS;
   }
 }
 
@@ -1274,23 +1306,25 @@ export async function assignFarmerToField(
 
         recordOwnerHiredFarmer(ownerId || 'owner_demo', farmerId, fieldId);
         const notifId = `notif_${Date.now()}`;
-        await setDoc(doc(db, 'notifications', notifId), {
-          id: notifId,
-          recipientId: farmerId,
-          title: 'New Field Assignment',
-          message: `You have been assigned to field ${fieldId}.`,
-          type: 'assignment',
-          read: false,
-          createdAt: serverTimestamp(),
-        });
+        try {
+          await setDoc(doc(db, 'notifications', notifId), {
+            id: notifId,
+            recipientId: farmerId,
+            title: 'New Field Assignment',
+            message: `You have been assigned to field ${fieldId}.`,
+            type: 'assignment',
+            read: false,
+            createdAt: serverTimestamp(),
+          });
+        } catch {
+          // notification ignore
+        }
       }
 
       notifyEcosystemChange();
       return true;
     } catch (err) {
-      console.error('Firestore assignFarmerToField error:', err);
-      notifyEcosystemChange();
-      return false;
+      console.warn('Firestore assignFarmerToField notice (persisting locally):', err);
     }
   }
 
@@ -1313,7 +1347,7 @@ export async function addWorkerToField(
   const activeEmployer = await getFarmerActiveEmployer(worker.farmerId);
   const currentOwner = ownerId || 'owner_demo';
 
-  if (activeEmployer && activeEmployer.ownerId !== currentOwner && activeEmployer.ownerId !== 'owner_demo') {
+  if (activeEmployer && activeEmployer.ownerId !== currentOwner) {
     return {
       success: false,
       error: `This farmer is currently working for another farm owner (${activeEmployer.ownerName || 'Another Farm'}). They must be freed before they can work on your fields.`,
@@ -1348,32 +1382,37 @@ export async function removeWorkerFromField(
     return { success: false, error: 'Missing fieldId or farmerId' };
   }
 
-  const idx = FALLBACK_FIELDS.findIndex(
-    (f) => f.fieldId === fieldId || (f as any).id === fieldId || (f as any).docId === fieldId
-  );
-  let targetDocId = fieldId;
-  let remainingWorkers: FieldWorkerAssignment[] = [];
-  let remainingFarmerIds: string[] = [];
+  // 1. Update in FALLBACK_FIELDS and DEFAULT_FIELDS
+  [FALLBACK_FIELDS, DEFAULT_FIELDS].forEach((fieldList) => {
+    const idx = fieldList.findIndex(
+      (f) => f.fieldId === fieldId || (f as any).id === fieldId || (f as any).docId === fieldId
+    );
+    if (idx !== -1) {
+      const f = fieldList[idx];
+      const existing = getFieldAssignedWorkers(f);
+      const remainingWorkers = existing.filter((w) => w.farmerId !== farmerId);
+      const remainingFarmerIds = remainingWorkers.map((w) => w.farmerId);
+      f.assignedWorkers = remainingWorkers;
+      f.assignedFarmerIds = remainingFarmerIds;
+      f.assignedFarmerId = remainingWorkers.length > 0 ? remainingWorkers[0].farmerId : null;
+      f.assignedFarmerName = remainingWorkers.length > 0 ? remainingWorkers[0].farmerName : null;
+      (f as any).farmerId = f.assignedFarmerId;
+      (f as any).assignedTo = f.assignedFarmerId;
+    }
+  });
 
-  if (idx !== -1) {
-    const f = FALLBACK_FIELDS[idx];
-    const existing = getFieldAssignedWorkers(f);
-    remainingWorkers = existing.filter((w) => w.farmerId !== farmerId);
-    remainingFarmerIds = remainingWorkers.map((w) => w.farmerId);
-    f.assignedWorkers = remainingWorkers;
-    f.assignedFarmerIds = remainingFarmerIds;
-    f.assignedFarmerId = remainingWorkers.length > 0 ? remainingWorkers[0].farmerId : null;
-    f.assignedFarmerName = remainingWorkers.length > 0 ? remainingWorkers[0].farmerName : null;
-    (f as any).farmerId = f.assignedFarmerId;
-    (f as any).assignedTo = f.assignedFarmerId;
-    targetDocId = (f as any).docId || (f as any).id || fieldId;
+  try {
+    localStorage.setItem(LOCAL_FIELDS_KEY, JSON.stringify(FALLBACK_FIELDS));
+  } catch {
+    // ignore
   }
   syncEcosystemCache();
 
+  // 2. Update Firestore document
   if (db) {
     try {
       let fieldRef: any = null;
-      const directRef = doc(db, 'fields', targetDocId);
+      const directRef = doc(db, 'fields', fieldId);
       const directSnap = await getDoc(directRef);
       if (directSnap.exists()) {
         fieldRef = directRef;
@@ -1383,19 +1422,54 @@ export async function removeWorkerFromField(
         const snap = await getDocs(qField);
         if (!snap.empty) fieldRef = snap.docs[0].ref;
       }
+      if (!fieldRef) {
+        const qField2 = query(collection(db, 'fields'), where('id', '==', fieldId));
+        const snap2 = await getDocs(qField2);
+        if (!snap2.empty) fieldRef = snap2.docs[0].ref;
+      }
+
       if (fieldRef) {
+        const snapDoc = await getDoc(fieldRef);
+        const data = (snapDoc.data() || {}) as any;
+        const existingWorkers = getFieldAssignedWorkers(data);
+        const remainingWorkers = existingWorkers.filter((w) => w.farmerId !== farmerId);
+        const remainingFarmerIds = (data.assignedFarmerIds || remainingWorkers.map((w) => w.farmerId)).filter(
+          (id: string) => id !== farmerId
+        );
+        const nextFarmerId = remainingWorkers.length > 0 ? remainingWorkers[0].farmerId : null;
+        const nextFarmerName = remainingWorkers.length > 0 ? remainingWorkers[0].farmerName : null;
+
         await updateDoc(fieldRef, {
           assignedWorkers: remainingWorkers,
           assignedFarmerIds: remainingFarmerIds,
-          assignedFarmerId: remainingWorkers.length > 0 ? remainingWorkers[0].farmerId : null,
-          assignedFarmerName: remainingWorkers.length > 0 ? remainingWorkers[0].farmerName : null,
-          farmerId: remainingWorkers.length > 0 ? remainingWorkers[0].farmerId : null,
+          assignedFarmerId: nextFarmerId,
+          assignedFarmerName: nextFarmerName,
+          farmerId: nextFarmerId,
+          assignedTo: nextFarmerId,
           updatedAt: serverTimestamp(),
         });
       }
     } catch (err) {
       console.warn('Firestore removeWorkerFromField notice:', err);
     }
+  }
+
+  // If this farmer now has no remaining fields, update the active hire cache
+  try {
+    const allFields = await getOwnerFields();
+    const remainingForFarmer = allFields.filter((f) =>
+      getFieldAssignedWorkers(f).some((w) => w.farmerId === farmerId)
+    );
+    if (remainingForFarmer.length === 0) {
+      const hired = loadHiredCache();
+      saveHiredCache(
+        hired.map((r) =>
+          r.farmerId === farmerId ? { ...r, active: false, freedAt: new Date().toISOString() } : r
+        )
+      );
+    }
+  } catch {
+    // ignore
   }
 
   notifyEcosystemChange();
@@ -1405,8 +1479,10 @@ export async function removeWorkerFromField(
 /**
  * Free farmer from an owner:
  * 1. Unassigns the farmer from ALL fields of this owner.
- * 2. Marks any active contracts/assignments as completed.
- * 3. Frees the farmer so they are immediately available for hire by ANOTHER farm owner.
+ * 2. Cleans in-memory FALLBACK_FIELDS, DEFAULT_FIELDS, and Firestore fields collection.
+ * 3. Marks all hire/contract records for this farmer as freed in localStorage cache.
+ * 4. Marks in-memory assignments as inactive and assignment requests as completed.
+ * 5. Frees the farmer so they are immediately available for hire by ANY farm owner.
  */
 export async function freeFarmerFromOwner(
   ownerId: string,
@@ -1416,7 +1492,7 @@ export async function freeFarmerFromOwner(
   const activeOwnerId = ownerId || 'owner_demo';
   const nameOfFarmer = farmerName || 'Farmer Specialist';
 
-  // 1. Unassign from all fields belonging to this owner
+  // 1. Unassign from all fields across FALLBACK_FIELDS, DEFAULT_FIELDS, and getOwnerFields()
   const allFields = await getOwnerFields();
   for (const f of allFields) {
     const isOwnerField = !f.ownerId || f.ownerId === activeOwnerId || activeOwnerId === 'owner_demo';
@@ -1427,59 +1503,175 @@ export async function freeFarmerFromOwner(
     const direct = f.assignedFarmerId === farmerId || (f as any).farmerId === farmerId;
 
     if (inList || inWorkers || direct) {
-      await removeWorkerFromField(f.fieldId || (f as any).id, farmerId, activeOwnerId);
+      const targetId = (f as any).docId || f.fieldId || (f as any).id;
+      await removeWorkerFromField(targetId, farmerId, activeOwnerId);
     }
   }
 
-  // 2. Mark active hire as freed in localStorage cache
+  // 2. Direct memory cleanup in FALLBACK_FIELDS and DEFAULT_FIELDS to guarantee instant consistency
+  [FALLBACK_FIELDS, DEFAULT_FIELDS].forEach((fieldList) => {
+    fieldList.forEach((f) => {
+      const inList = f.assignedFarmerIds && f.assignedFarmerIds.includes(farmerId);
+      const inWorkers = f.assignedWorkers && f.assignedWorkers.some((w) => w.farmerId === farmerId);
+      const direct = f.assignedFarmerId === farmerId || (f as any).farmerId === farmerId;
+
+      if (inList || inWorkers || direct) {
+        f.assignedWorkers = (f.assignedWorkers || []).filter((w) => w.farmerId !== farmerId);
+        f.assignedFarmerIds = (f.assignedFarmerIds || []).filter((id) => id !== farmerId);
+        f.assignedFarmerId = f.assignedWorkers.length > 0 ? f.assignedWorkers[0].farmerId : null;
+        f.assignedFarmerName = f.assignedWorkers.length > 0 ? f.assignedWorkers[0].farmerName : null;
+        (f as any).farmerId = f.assignedFarmerId;
+        (f as any).assignedTo = f.assignedFarmerId;
+      }
+    });
+  });
+
+  try {
+    localStorage.setItem(LOCAL_FIELDS_KEY, JSON.stringify(FALLBACK_FIELDS));
+  } catch {
+    // ignore
+  }
+
+  // 3. Mark ALL hire records for this farmer as freed in localStorage cache
   const hiredCache = loadHiredCache();
+  let foundInHired = false;
   const updatedHired = hiredCache.map((r) => {
-    if (r.farmerId === farmerId && (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId)) {
+    if (r.farmerId === farmerId) {
+      foundInHired = true;
       return { ...r, active: false, freedAt: new Date().toISOString() };
     }
     return r;
   });
+  if (!foundInHired) {
+    updatedHired.push({
+      ownerId: activeOwnerId,
+      farmerId,
+      active: false,
+      freedAt: new Date().toISOString(),
+      hiredAt: new Date().toISOString(),
+    });
+  }
   saveHiredCache(updatedHired);
 
-  // 3. Mark in-memory assignments as completed/inactive
+  // 4. Mark in-memory assignments as completed/inactive
   inMemoryAssignments.forEach((a) => {
-    if (a.farmerId === farmerId && (a.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !a.ownerId)) {
+    if (a.farmerId === farmerId) {
       a.status = 'inactive';
       a.unassignedAt = new Date().toISOString();
     }
   });
 
-  // 4. Mark in-memory assignment requests as completed
+  // 5. Mark in-memory assignment requests as completed
   inMemoryAssignmentRequests.forEach((r) => {
-    if (r.farmerId === farmerId && (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId)) {
+    if (r.farmerId === farmerId) {
       if (r.status === 'approved' || r.status === 'pending') {
         (r as any).status = 'completed';
       }
     }
   });
 
-  // 5. Reset assignedFieldsCount in registered farmers
+  // 6. Reset assignedFieldsCount in FALLBACK_FARMERS
   const fIdx = FALLBACK_FARMERS.findIndex((f) => f.uid === farmerId);
   if (fIdx !== -1) {
     FALLBACK_FARMERS[fIdx].assignedFieldsCount = 0;
   }
 
-  // 6. Firestore synchronization
+  // 7. Comprehensive Firestore synchronization across collections
   if (db) {
     try {
-      const qAssign = query(
-        collection(db, 'assignments'),
-        where('farmerId', '==', farmerId),
-        where('status', '==', 'active')
-      );
-      const snapAssign = await getDocs(qAssign);
-      for (const d of snapAssign.docs) {
-        await updateDoc(d.ref, {
-          status: 'inactive',
-          freedAt: serverTimestamp(),
-        });
+      // 7a. Clean all matching field documents in fields collection directly
+      try {
+        const snapAllFields = await getDocs(collection(db, 'fields'));
+        for (const d of snapAllFields.docs) {
+          const data = (d.data() || {}) as any;
+          const inWorkers = (data.assignedWorkers || []).some((w: any) => w.farmerId === farmerId);
+          const inIds = (data.assignedFarmerIds || []).includes(farmerId);
+          const inDirect = data.assignedFarmerId === farmerId || data.farmerId === farmerId || data.assignedTo === farmerId;
+
+          if (inWorkers || inIds || inDirect) {
+            const remWorkers = (data.assignedWorkers || []).filter((w: any) => w.farmerId !== farmerId);
+            const remIds = (data.assignedFarmerIds || []).filter((id: string) => id !== farmerId);
+            const nextId = remWorkers.length > 0 ? remWorkers[0].farmerId : null;
+            const nextName = remWorkers.length > 0 ? remWorkers[0].farmerName : null;
+            await updateDoc(d.ref, {
+              assignedFarmerId: nextId,
+              assignedFarmerName: nextName,
+              farmerId: nextId,
+              assignedTo: nextId,
+              assignedWorkers: remWorkers,
+              assignedFarmerIds: remIds,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        }
+      } catch (errFields) {
+        console.warn('Firestore freeFarmer fields notice:', errFields);
       }
 
+      // 7b. Inactivate assignments collection
+      try {
+        const qAssign = query(
+          collection(db, 'assignments'),
+          where('farmerId', '==', farmerId),
+          where('status', '==', 'active')
+        );
+        const snapAssign = await getDocs(qAssign);
+        for (const d of snapAssign.docs) {
+          await updateDoc(d.ref, {
+            status: 'inactive',
+            freedAt: serverTimestamp(),
+          });
+        }
+      } catch (errAssign) {
+        console.warn('Firestore freeFarmer assignments notice:', errAssign);
+      }
+
+      // 7c. Complete assignment_requests collection
+      try {
+        const qReq = query(collection(db, 'assignment_requests'), where('farmerId', '==', farmerId));
+        const snapReq = await getDocs(qReq);
+        for (const d of snapReq.docs) {
+          const data = d.data();
+          if (data.status === 'approved' || data.status === 'pending') {
+            await updateDoc(d.ref, {
+              status: 'completed',
+              completedAt: serverTimestamp(),
+            });
+          }
+        }
+      } catch (errReq) {
+        console.warn('Firestore freeFarmer requests notice:', errReq);
+      }
+
+      // 7d. Inactivate field_assignments collection
+      try {
+        const qFA = query(collection(db, 'field_assignments'), where('farmerId', '==', farmerId));
+        const snapFA = await getDocs(qFA);
+        for (const d of snapFA.docs) {
+          await updateDoc(d.ref, {
+            status: 'inactive',
+            active: false,
+            freedAt: serverTimestamp(),
+          });
+        }
+      } catch (errFA) {
+        console.warn('Firestore freeFarmer field_assignments notice:', errFA);
+      }
+
+      // 7e. Update farmer profile in users collection
+      try {
+        const userRef = doc(db, 'users', farmerId);
+        await updateDoc(userRef, {
+          assignedFieldsCount: 0,
+          isEmployed: false,
+          activeOwnerId: null,
+          updatedAt: serverTimestamp(),
+        });
+      } catch {
+        // Fallback user might not exist in Firestore
+      }
+
+      // 7f. Push notification to the farmer
       const notifId = `notif_freed_${Date.now()}`;
       await setDoc(doc(db, 'notifications', notifId), {
         id: notifId,
@@ -1491,7 +1683,7 @@ export async function freeFarmerFromOwner(
         createdAt: serverTimestamp(),
       });
     } catch (err) {
-      console.warn('Firestore freeFarmer notice:', err);
+      console.warn('Firestore freeFarmer overall notice:', err);
     }
   }
 
@@ -1509,7 +1701,7 @@ export async function getFarmerActiveEmployer(
 ): Promise<{ ownerId: string; ownerName?: string; fieldCount: number; fieldNames: string[] } | null> {
   if (!farmerId) return null;
 
-  // 1. Check all fields
+  // 1. Check all fields (source of truth for active work)
   const allFields = await getOwnerFields();
   const assignedFields = allFields.filter((f) => {
     const inList = f.assignedFarmerIds && f.assignedFarmerIds.includes(farmerId);
@@ -1540,9 +1732,9 @@ export async function getFarmerActiveEmployer(
     };
   }
 
-  // 3. Check active hired cache
+  // 3. Check active hired cache (must be explicitly active and not freed)
   const hiredCache = loadHiredCache();
-  const activeHire = hiredCache.find((r) => r.farmerId === farmerId && (r as any).active !== false);
+  const activeHire = hiredCache.find((r) => r.farmerId === farmerId && r.active === true && !r.freedAt);
   if (activeHire) {
     const ownerId = activeHire.ownerId || 'owner_demo';
     return {
@@ -1891,15 +2083,22 @@ export function loadHiredCache(): HiredRecord[] {
     const raw = localStorage.getItem(LOCAL_HIRED_KEY);
     if (!raw) {
       return [
-        { ownerId: 'owner_demo', farmerId: 'farmer_01', hiredAt: new Date().toISOString(), fieldId: 'field_north_rice' },
-        { ownerId: 'owner_demo', farmerId: 'farmer_02', hiredAt: new Date().toISOString(), fieldId: 'field_south_corn' },
+        { ownerId: 'owner_demo', farmerId: 'farmer_01', hiredAt: new Date().toISOString(), fieldId: 'field_north_rice', active: true },
+        { ownerId: 'owner_demo', farmerId: 'farmer_02', hiredAt: new Date().toISOString(), fieldId: 'field_south_corn', active: true },
       ];
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map((r) => ({
+        ...r,
+        active: r.active !== undefined ? r.active : !r.freedAt,
+      }));
+    }
+    return [];
   } catch {
     return [
-      { ownerId: 'owner_demo', farmerId: 'farmer_01', hiredAt: new Date().toISOString(), fieldId: 'field_north_rice' },
-      { ownerId: 'owner_demo', farmerId: 'farmer_02', hiredAt: new Date().toISOString(), fieldId: 'field_south_corn' },
+      { ownerId: 'owner_demo', farmerId: 'farmer_01', hiredAt: new Date().toISOString(), fieldId: 'field_north_rice', active: true },
+      { ownerId: 'owner_demo', farmerId: 'farmer_02', hiredAt: new Date().toISOString(), fieldId: 'field_south_corn', active: true },
     ];
   }
 }
@@ -1952,7 +2151,7 @@ export async function getFarmerEmploymentMap(): Promise<Record<string, string>> 
 
   // 3. Active (not freed) hire records
   loadHiredCache().forEach((r) => {
-    if (r.active !== false && r.farmerId && !map[r.farmerId]) {
+    if (r.active === true && !r.freedAt && r.farmerId && !map[r.farmerId]) {
       map[r.farmerId] = r.ownerId || 'owner_demo';
     }
   });
@@ -2031,9 +2230,11 @@ export async function hasOwnerHiredFarmer(ownerId: string, farmerId: string): Pr
 }
 
 /**
- * Returns all farmer IDs that have been hired by the given owner (active or past)
+ * Returns farmer IDs that have been hired by the given owner.
+ * @param activeOnly If true (default), returns only currently hired/assigned farmers.
+ *                   If false, returns all farmers ever hired by this owner (for rating eligibility).
  */
-export async function getHiredFarmerIdsForOwner(ownerId: string): Promise<string[]> {
+export async function getHiredFarmerIdsForOwner(ownerId: string, activeOnly: boolean = true): Promise<string[]> {
   const activeOwnerId = ownerId || 'owner_demo';
   const hiredSet = new Set<string>();
 
@@ -2041,27 +2242,42 @@ export async function getHiredFarmerIdsForOwner(ownerId: string): Promise<string
   const fields = await getOwnerFields();
   fields.forEach((f) => {
     const belongsToOwner = !f.ownerId || f.ownerId === activeOwnerId || activeOwnerId === 'owner_demo';
-    const workerId = f.assignedFarmerId || (f as any).farmerId;
-    if (belongsToOwner && workerId) hiredSet.add(workerId);
+    if (belongsToOwner) {
+      getFieldAssignedWorkers(f).forEach((w) => {
+        if (w.farmerId) hiredSet.add(w.farmerId);
+      });
+    }
   });
 
   // 2. Local cache
   const cached = loadHiredCache();
   cached.forEach((r) => {
     if (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) {
-      if (r.farmerId) hiredSet.add(r.farmerId);
+      if (activeOnly) {
+        if (r.active === true && !r.freedAt && r.farmerId) hiredSet.add(r.farmerId);
+      } else {
+        if (r.farmerId) hiredSet.add(r.farmerId);
+      }
     }
   });
 
   // 3. Memory assignments & requests
   inMemoryAssignments.forEach((a) => {
     if (a.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !a.ownerId) {
-      if (a.farmerId) hiredSet.add(a.farmerId);
+      if (activeOnly) {
+        if (a.status === 'active' && a.farmerId) hiredSet.add(a.farmerId);
+      } else {
+        if (a.farmerId) hiredSet.add(a.farmerId);
+      }
     }
   });
   inMemoryAssignmentRequests.forEach((r) => {
-    if ((r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) && r.status === 'approved') {
-      if (r.farmerId) hiredSet.add(r.farmerId);
+    if (r.ownerId === activeOwnerId || activeOwnerId === 'owner_demo' || !r.ownerId) {
+      if (activeOnly) {
+        if (r.status === 'approved' && r.farmerId) hiredSet.add(r.farmerId);
+      } else {
+        if ((r.status === 'approved' || (r as any).status === 'completed') && r.farmerId) hiredSet.add(r.farmerId);
+      }
     }
   });
 
@@ -2141,7 +2357,7 @@ export async function createAssignmentRequest(params: {
   // Rule 1: Worker exclusivity — farmer must not be employed by ANOTHER owner
   const activeEmployer = await getFarmerActiveEmployer(params.farmerId);
   const currentOwner = params.ownerId || 'owner_demo';
-  if (activeEmployer && activeEmployer.ownerId !== currentOwner && activeEmployer.ownerId !== 'owner_demo') {
+  if (activeEmployer && activeEmployer.ownerId !== currentOwner) {
     return {
       success: false,
       error: `This specialist is currently employed by another farm owner (${activeEmployer.ownerName || 'Another Farm'}). They must finish their work and be freed before you can hire them.`,
@@ -2325,7 +2541,7 @@ export async function approveAssignmentRequest(requestId: string): Promise<{ suc
   // A field may have MULTIPLE workers.
   const activeEmployer = await getFarmerActiveEmployer(request.farmerId);
   const requestOwner = request.ownerId || 'owner_demo';
-  if (activeEmployer && activeEmployer.ownerId !== requestOwner && activeEmployer.ownerId !== 'owner_demo') {
+  if (activeEmployer && activeEmployer.ownerId !== requestOwner) {
     return {
       success: false,
       error: 'You are currently working for another farm owner. Ask them to free you before accepting a new owner.',

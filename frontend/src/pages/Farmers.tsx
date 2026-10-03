@@ -137,7 +137,7 @@ export const Farmers: React.FC = () => {
       setIncomingRequests(incoming.filter((r) => r.status === 'pending'));
 
       // 4. Load Hired Farmer IDs for current owner (historic — used for rating eligibility)
-      const hiredIds = await getHiredFarmerIdsForOwner(activeUid);
+      const hiredIds = await getHiredFarmerIdsForOwner(activeUid, false);
       setHiredFarmerIds(new Set(hiredIds));
 
       // 5. Current employment map (who is working for whom right now)
@@ -398,6 +398,8 @@ export const Farmers: React.FC = () => {
 
   // Owner: "Finish Work & Free Farmer"
   // Removes the farmer from ALL of this owner's fields and releases them so other owners can hire them.
+  // Owner: "Finish Work & Free Farmer"
+  // Removes the farmer from ALL of this owner's fields and releases them so other owners can hire them.
   const handleEndContract = async (farmer: FarmerProfile, _field?: Field) => {
     const myFields = getMyFieldsForFarmer(farmer.uid);
     const fieldList = myFields.map((f) => f.name).join(', ');
@@ -411,6 +413,38 @@ export const Farmers: React.FC = () => {
     if (!confirmRelease) return;
 
     setActionLoadingId(farmer.uid);
+    // Optimistically update React state immediately
+    setFields((prev) =>
+      prev.map((f) => {
+        const hasWorker = (f.assignedWorkers || []).some((w) => w.farmerId === farmer.uid);
+        const hasId = (f.assignedFarmerIds || []).includes(farmer.uid);
+        const direct = f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid;
+        if (!hasWorker && !hasId && !direct) return f;
+
+        const remWorkers = (f.assignedWorkers || []).filter((w) => w.farmerId !== farmer.uid);
+        const remIds = (f.assignedFarmerIds || []).filter((id) => id !== farmer.uid);
+        const nextId = remWorkers.length > 0 ? remWorkers[0].farmerId : null;
+        const nextName = remWorkers.length > 0 ? remWorkers[0].farmerName : null;
+        return {
+          ...f,
+          assignedWorkers: remWorkers,
+          assignedFarmerIds: remIds,
+          assignedFarmerId: nextId,
+          assignedFarmerName: nextName,
+          farmerId: nextId,
+          assignedTo: nextId,
+        };
+      })
+    );
+    setEmploymentMap((prev) => {
+      const next = { ...prev };
+      delete next[farmer.uid];
+      return next;
+    });
+    setFarmers((prev) =>
+      prev.map((f) => (f.uid === farmer.uid ? { ...f, assignedFieldsCount: 0 } : f))
+    );
+
     try {
       const res = await freeFarmerFromOwner(activeOwnerId, farmer.uid, farmer.fullName);
       if (res.success) {
@@ -421,12 +455,15 @@ export const Farmers: React.FC = () => {
           'success'
         );
         if (detailFarmer?.uid === farmer.uid) setDetailFarmer(null);
+        notifyEcosystemChange();
         await loadData();
       } else {
         showToast(res.error || 'Failed to free farmer', 'error');
+        await loadData();
       }
     } catch (err: any) {
       showToast(err?.message || 'Error freeing farmer', 'error');
+      await loadData();
     } finally {
       setActionLoadingId(null);
     }
@@ -1725,13 +1762,25 @@ export const Farmers: React.FC = () => {
                 <div className="pt-space-md border-t border-surface-container flex flex-col gap-2">
                   {/* State A: Available → Request to Work */}
                   {isAvailable && (
-                    <button
-                      onClick={() => openHireModal(farmer)}
-                      className="w-full bg-primary text-on-primary font-label-md text-label-md py-2.5 px-space-md rounded-xl font-semibold flex items-center justify-center gap-space-xs hover:opacity-95 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">person_add</span>
-                      <span>{t('farmers.hireFarmer', 'Request to Work')}</span>
-                    </button>
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        onClick={() => openHireModal(farmer)}
+                        className="w-full bg-primary text-on-primary font-label-md text-label-md py-2.5 px-space-md rounded-xl font-semibold flex items-center justify-center gap-space-xs hover:opacity-95 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">person_add</span>
+                        <span>{t('farmers.hireFarmer', 'Request to Work')}</span>
+                      </button>
+                      {isFarmerHired(farmer.uid) && (
+                        <button
+                          type="button"
+                          onClick={() => openRateModal(farmer, assignedField?.fieldId, assignedField?.name)}
+                          className="w-full py-1.5 px-space-md rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                        >
+                          <span className="material-symbols-outlined text-[16px] text-amber-500">rate_review</span>
+                          <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {/* State B: Pending → Simulation Trigger (for demo) + Cancel */}
@@ -1757,8 +1806,8 @@ export const Farmers: React.FC = () => {
                     </div>
                   )}
 
-                  {/* State C: Working For You / Hired → Message, Finish & Free Farmer, Rate & Comment */}
-                  {(isWorking || isFarmerHired(farmer.uid)) && (
+                  {/* State C: Working For You → Message, Finish & Free Farmer, Rate & Comment */}
+                  {isWorking && (
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
                         <button
@@ -1768,17 +1817,15 @@ export const Farmers: React.FC = () => {
                           <span className="material-symbols-outlined text-[18px] text-primary">chat</span>
                           <span>{t('farmers.messageWorker', 'Message')}</span>
                         </button>
-                        {isWorking && (
-                          <button
-                            disabled={actionLoadingId === farmer.uid}
-                            onClick={() => handleEndContract(farmer, assignedField)}
-                            className="flex-1 px-space-md py-2 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600/30 font-label-md text-label-md font-semibold transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
-                            title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
-                          >
-                            <span className="material-symbols-outlined text-[16px]">task_alt</span>
-                            <span>{t('farmers.freeFarmerBtn', 'Finish & Free')}</span>
-                          </button>
-                        )}
+                        <button
+                          disabled={actionLoadingId === farmer.uid}
+                          onClick={() => handleEndContract(farmer, assignedField)}
+                          className="flex-1 px-space-md py-2 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600/30 font-label-md text-label-md font-semibold transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
+                          title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                          <span>{t('farmers.freeFarmerBtn', 'Finish & Free')}</span>
+                        </button>
                       </div>
                       {isFarmerHired(farmer.uid) && (
                         <button
