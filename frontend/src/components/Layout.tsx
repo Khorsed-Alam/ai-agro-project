@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { Navigation } from './Navigation';
 import { PreferenceControls } from './PreferenceControls';
+import { ErrorBoundary } from './common/ErrorBoundary';
 import { apiService } from '../services/api';
 import type { HealthResponse } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -240,7 +241,9 @@ export const Layout: React.FC = () => {
         </header>
 
         <main className="flex-1 pt-16 bg-surface min-h-screen">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

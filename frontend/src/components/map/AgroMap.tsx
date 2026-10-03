@@ -42,7 +42,7 @@ function getStoredToken(): string {
 }
 
 export const AgroMap: React.FC<AgroMapProps> = ({
-  initialCenter = [-121.655, 36.677], // Salinas Valley default
+  initialCenter,
   initialZoom = 14,
   boundary = null,
   path = null,
@@ -51,6 +51,11 @@ export const AgroMap: React.FC<AgroMapProps> = ({
   fieldTitle = 'Agricultural Field Map',
   height = '480px',
 }) => {
+  // Normalize center coordinates safely to prevent any undefined / NaN crashes
+  const safeLng = typeof initialCenter?.[0] === 'number' && Number.isFinite(initialCenter[0]) ? initialCenter[0] : -121.655;
+  const safeLat = typeof initialCenter?.[1] === 'number' && Number.isFinite(initialCenter[1]) ? initialCenter[1] : 36.677;
+  const centerCoord: [number, number] = [safeLng, safeLat];
+
   const [mapboxToken, setMapboxToken] = useState<string>(getStoredToken);
   const [showTokenDialog, setShowTokenDialog] = useState(false);
   const [tokenInput, setTokenInput] = useState(mapboxToken);
@@ -142,7 +147,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
         style: styleUri,
-        center: initialCenter,
+        center: centerCoord,
         zoom: initialZoom,
         pitch: 30,
       });
@@ -275,7 +280,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
 
         // Add center marker
         new mapboxgl.Marker({ color: '#2d6a4f' })
-          .setLngLat(initialCenter)
+          .setLngLat(centerCoord)
           .setPopup(new mapboxgl.Popup().setHTML(`<strong>${fieldTitle}</strong>`))
           .addTo(map);
       });
@@ -286,7 +291,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
     } catch (err) {
       console.warn('Mapbox initialization error, falling back to GIS canvas:', err);
     }
-  }, [isMapboxReady, mapboxToken, mapStyle, readOnly, computeAreaAcres, initialCenter, initialZoom, fieldTitle]);
+  }, [isMapboxReady, mapboxToken, mapStyle, readOnly, computeAreaAcres, centerCoord, initialZoom, fieldTitle]);
 
   // Style change handler
   const handleStyleChange = (newStyle: 'satellite' | 'streets' | 'outdoors') => {
@@ -344,12 +349,17 @@ export const AgroMap: React.FC<AgroMapProps> = ({
   };
 
   // ─── Vector GIS Math & Canvas Fallback Calculations ──────────────────────────
-  const activePolygonCoords = useMemo(() => {
+  const activePolygonCoords = useMemo((): number[][] => {
     if (drawnBoundary?.coordinates?.[0]?.length) {
-      return drawnBoundary.coordinates[0];
+      const valid = drawnBoundary.coordinates[0].filter(
+        (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+      );
+      if (valid.length >= 3) {
+        return valid;
+      }
     }
-    // Default polygon around initial center if no coordinates saved yet
-    const [cLng, cLat] = initialCenter;
+    // Default polygon around safe center if no coordinates saved yet
+    const [cLng, cLat] = centerCoord;
     const delta = 0.0035;
     return [
       [cLng - delta, cLat - delta * 0.8],
@@ -358,18 +368,23 @@ export const AgroMap: React.FC<AgroMapProps> = ({
       [cLng - delta * 0.8, cLat + delta * 1.0],
       [cLng - delta, cLat - delta * 0.8],
     ];
-  }, [drawnBoundary, initialCenter]);
+  }, [drawnBoundary, centerCoord]);
 
-  const activePathCoords = useMemo(() => {
+  const activePathCoords = useMemo((): number[][] | null => {
     if (drawnPath?.coordinates?.length) {
-      return drawnPath.coordinates;
+      const valid = drawnPath.coordinates.filter(
+        (pt) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+      );
+      if (valid.length >= 2) {
+        return valid;
+      }
     }
     return null;
   }, [drawnPath]);
 
   // Compute SVG projection bounds
   const svgProjection = useMemo(() => {
-    const allCoords = [...activePolygonCoords, ...(activePathCoords || [])];
+    const allCoords = [...(activePolygonCoords || []), ...(activePathCoords || [])];
     if (allCoords.length === 0) {
       return {
         minLng: 0,
@@ -377,17 +392,26 @@ export const AgroMap: React.FC<AgroMapProps> = ({
         minLat: 0,
         maxLat: 100,
         project: (_lng: number, _lat: number): [number, number] => [400, 250],
-        unproject: (_x: number, _y: number): [number, number] => [initialCenter[0], initialCenter[1]],
+        unproject: (_x: number, _y: number): [number, number] => [centerCoord[0], centerCoord[1]],
       };
     }
 
     let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
     allCoords.forEach(([lng, lat]) => {
-      if (lng < minLng) minLng = lng;
-      if (lng > maxLng) maxLng = lng;
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
+      if (Number.isFinite(lng) && Number.isFinite(lat)) {
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      }
     });
+
+    if (!Number.isFinite(minLng) || !Number.isFinite(maxLng) || !Number.isFinite(minLat) || !Number.isFinite(maxLat)) {
+      minLng = centerCoord[0] - 0.01;
+      maxLng = centerCoord[0] + 0.01;
+      minLat = centerCoord[1] - 0.01;
+      maxLat = centerCoord[1] + 0.01;
+    }
 
     const padLng = Math.max((maxLng - minLng) * 0.35, 0.001);
     const padLat = Math.max((maxLat - minLat) * 0.35, 0.001);
@@ -401,20 +425,28 @@ export const AgroMap: React.FC<AgroMapProps> = ({
     const heightNum = 500;
 
     const project = (lng: number, lat: number): [number, number] => {
-      const x = ((lng - bMinLng) / (bMaxLng - bMinLng)) * width;
-      // Invert Y for SVG coordinates
-      const y = heightNum - ((lat - bMinLat) / (bMaxLat - bMinLat)) * heightNum;
-      return [x, y];
+      const validLng = Number.isFinite(lng) ? lng : centerCoord[0];
+      const validLat = Number.isFinite(lat) ? lat : centerCoord[1];
+      const denomX = bMaxLng - bMinLng || 0.002;
+      const denomY = bMaxLat - bMinLat || 0.002;
+      const x = ((validLng - bMinLng) / denomX) * width;
+      const y = heightNum - ((validLat - bMinLat) / denomY) * heightNum;
+      return [Number.isFinite(x) ? x : 400, Number.isFinite(y) ? y : 250];
     };
 
     const unproject = (x: number, y: number): [number, number] => {
-      const lng = bMinLng + (x / width) * (bMaxLng - bMinLng);
-      const lat = bMinLat + ((heightNum - y) / heightNum) * (bMaxLat - bMinLat);
-      return [Number(lng.toFixed(6)), Number(lat.toFixed(6))];
+      const denomX = width || 800;
+      const denomY = heightNum || 500;
+      const lng = bMinLng + (x / denomX) * (bMaxLng - bMinLng);
+      const lat = bMinLat + ((denomY - y) / denomY) * (bMaxLat - bMinLat);
+      return [
+        Number.isFinite(lng) ? Number(lng.toFixed(6)) : centerCoord[0],
+        Number.isFinite(lat) ? Number(lat.toFixed(6)) : centerCoord[1],
+      ];
     };
 
     return { minLng, maxLng, minLat, maxLat, project, unproject };
-  }, [activePolygonCoords, activePathCoords]);
+  }, [activePolygonCoords, activePathCoords, centerCoord]);
 
   // Handle canvas click to add points when in edit mode
   const handleGisCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -446,7 +478,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
   };
 
   const handleResetDefaultBoundary = () => {
-    const [cLng, cLat] = initialCenter;
+    const [cLng, cLat] = centerCoord;
     const delta = 0.0035;
     const defaultCoords = [
       [cLng - delta, cLat - delta * 0.8],
@@ -465,6 +497,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
 
   // Convert polygon coordinates to SVG points string
   const polygonSvgPoints = useMemo(() => {
+    if (!activePolygonCoords || activePolygonCoords.length === 0) return '';
     return activePolygonCoords
       .map(([lng, lat]) => {
         const [x, y] = svgProjection.project(lng, lat);
@@ -475,7 +508,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
 
   // Convert path coordinates to SVG points string
   const pathSvgPoints = useMemo(() => {
-    if (!activePathCoords) return '';
+    if (!activePathCoords || activePathCoords.length === 0) return '';
     return activePathCoords
       .map(([lng, lat]) => {
         const [x, y] = svgProjection.project(lng, lat);
@@ -487,13 +520,15 @@ export const AgroMap: React.FC<AgroMapProps> = ({
   // Calculate centroid for pin marker
   const centroid = useMemo(() => {
     let sumX = 0, sumY = 0;
-    activePolygonCoords.forEach(([lng, lat]) => {
+    (activePolygonCoords || []).forEach(([lng, lat]) => {
       const [x, y] = svgProjection.project(lng, lat);
       sumX += x;
       sumY += y;
     });
-    const len = activePolygonCoords.length || 1;
-    return [sumX / len, sumY / len];
+    const len = activePolygonCoords?.length || 1;
+    const cX = sumX / len;
+    const cY = sumY / len;
+    return [Number.isFinite(cX) ? cX : 400, Number.isFinite(cY) ? cY : 250];
   }, [activePolygonCoords, svgProjection]);
 
   // ─── RENDER: Official Mapbox GL JS if token is present ────────────────────────
@@ -692,7 +727,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
           <span className="font-data-mono text-label-sm bg-primary-container text-on-primary px-2 py-0.5 rounded font-semibold">
             {calculatedArea !== null && calculatedArea > 0
               ? `Area: ${calculatedArea} Acres`
-              : `Points: ${activePolygonCoords.length}`}
+              : `Points: ${activePolygonCoords?.length || 0}`}
           </span>
 
           <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 text-[10px] font-semibold flex items-center gap-1">
@@ -813,7 +848,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
       <div className="px-space-md py-1.5 bg-surface flex items-center justify-between text-xs text-on-surface-variant border-b border-outline-variant/20">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-secondary">
-            Sector Lat/Lng: [{initialCenter[1].toFixed(4)}° N, {initialCenter[0].toFixed(4)}° W]
+            Sector Lat/Lng: [{centerCoord[1].toFixed(4)}° N, {centerCoord[0].toFixed(4)}° W]
           </span>
           {!readOnly && (
             <span className="hidden sm:inline text-on-surface-variant/80">
@@ -996,7 +1031,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
           <g transform="translate(18, 475)">
             <rect x="0" y="-18" width="220" height="24" rx="4" fill="#0f172a" fillOpacity="0.85" stroke="#334155" strokeWidth="0.8" />
             <text x="8" y="-3" fill="#94a3b8" fontSize="10" fontFamily="monospace">
-              GIS WGS84: {initialCenter[1].toFixed(3)}°N, {initialCenter[0].toFixed(3)}°W
+              GIS WGS84: {centerCoord[1].toFixed(3)}°N, {centerCoord[0].toFixed(3)}°W
             </text>
           </g>
         </svg>
@@ -1004,7 +1039,7 @@ export const AgroMap: React.FC<AgroMapProps> = ({
         {/* Floating Quick Action Overlay */}
         <div className="absolute bottom-3 right-3 flex items-center gap-2 bg-surface-container-lowest/90 backdrop-blur-xs p-1.5 rounded-lg border border-outline-variant/30 text-xs">
           <span className="text-on-surface-variant font-medium text-[11px] px-1">
-            {drawnBoundary ? `${drawnBoundary.coordinates[0]?.length || 0} vertices` : 'Ready to draw'}
+            {drawnBoundary?.coordinates?.[0]?.length ? `${drawnBoundary.coordinates[0].length} vertices` : 'Ready to draw'}
           </span>
           <button
             type="button"

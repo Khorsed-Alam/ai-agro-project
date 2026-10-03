@@ -535,10 +535,13 @@ export const FarmerDashboard: React.FC = () => {
             </div>
 
             <AgroMap
-              initialCenter={[selectedField.longitude, selectedField.latitude]}
+              initialCenter={[
+                Number.isFinite(selectedField.longitude) ? selectedField.longitude : -121.655,
+                Number.isFinite(selectedField.latitude) ? selectedField.latitude : 36.677,
+              ]}
               initialZoom={15}
-              boundary={selectedField.boundary}
-              path={selectedField.path}
+              boundary={selectedField.boundary || null}
+              path={selectedField.path || null}
               readOnly={true}
               fieldTitle={selectedField.name}
               height="380px"

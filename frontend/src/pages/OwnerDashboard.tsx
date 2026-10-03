@@ -236,12 +236,12 @@ export const OwnerDashboard: React.FC = () => {
   // Open Edit Wizard
   const openEditFieldWizard = (f: Field) => {
     setEditingField(f);
-    setFieldName(f.name);
-    setFieldCrop(f.crop);
-    setFieldSoil(f.soilType);
-    setFieldArea(f.areaAcres.toString());
-    setFieldLat(f.latitude);
-    setFieldLng(f.longitude);
+    setFieldName(f.name || '');
+    setFieldCrop(f.crop || 'Rice');
+    setFieldSoil(f.soilType || 'Salinas Silty Loam');
+    setFieldArea(f.areaAcres !== undefined && f.areaAcres !== null ? f.areaAcres.toString() : '10');
+    setFieldLat(typeof f.latitude === 'number' && Number.isFinite(f.latitude) ? f.latitude : 36.677);
+    setFieldLng(typeof f.longitude === 'number' && Number.isFinite(f.longitude) ? f.longitude : -121.655);
     setFieldBoundary(f.boundary || null);
     setFieldPath(f.path || null);
     setShowAddFieldWizard(true);
@@ -494,13 +494,16 @@ export const OwnerDashboard: React.FC = () => {
 
         <AgroMap
           initialCenter={
-            selectedFieldForDetail
+            selectedFieldForDetail &&
+            Number.isFinite(selectedFieldForDetail.longitude) &&
+            Number.isFinite(selectedFieldForDetail.latitude)
               ? [selectedFieldForDetail.longitude, selectedFieldForDetail.latitude]
               : [-121.655, 36.677]
           }
           initialZoom={14}
-          boundary={selectedFieldForDetail?.boundary}
-          path={selectedFieldForDetail?.path}
+          boundary={selectedFieldForDetail?.boundary || null}
+          path={selectedFieldForDetail?.path || null}
+          readOnly={true}
           fieldTitle={selectedFieldForDetail?.name || t('ownerDashboard.defaultMapFieldTitle', 'Salinas Valley Farm Sector')}
           height="450px"
         />
@@ -559,7 +562,7 @@ export const OwnerDashboard: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-4 text-xs text-on-surface-variant font-body-sm">
                         <span>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', f.crop, f.crop)}</strong></span>
-                        <span>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(f.areaAcres)} {t('farm.acres')}</strong></span>
+                        <span>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(f.areaAcres ?? 0)} {t('farm.acres')}</strong></span>
                         <span>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', f.soilType, f.soilType)}</strong></span>
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 text-xs text-secondary font-semibold">
@@ -661,10 +664,10 @@ export const OwnerDashboard: React.FC = () => {
                   >
                     <div className="flex items-center gap-space-sm min-w-0">
                       <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shrink-0">
-                        {farmer.fullName.charAt(0)}
+                        {(farmer.fullName || 'Farmer').charAt(0).toUpperCase()}
                       </div>
                       <div className="flex flex-col min-w-0">
-                        <span className="font-headline-sm text-xs font-semibold text-on-surface truncate">{farmer.fullName}</span>
+                        <span className="font-headline-sm text-xs font-semibold text-on-surface truncate">{farmer.fullName || 'Farmer Worker'}</span>
                         <span className="font-body-sm text-[11px] text-on-surface-variant truncate">{farmer.email}</span>
                       </div>
                     </div>
@@ -679,7 +682,7 @@ export const OwnerDashboard: React.FC = () => {
                           title={t('farmerRating.viewReviews')}
                         >
                           <span className="text-amber-500 text-sm leading-none">★</span>
-                          <span>{farmer.averageRating ? farmer.averageRating.toFixed(1) : '5.0'}</span>
+                          <span>{typeof farmer.averageRating === 'number' ? farmer.averageRating.toFixed(1) : '5.0'}</span>
                           <span className="text-[10px] text-on-surface-variant font-normal">({farmer.totalRatings})</span>
                         </button>
                       ) : (
@@ -756,7 +759,7 @@ export const OwnerDashboard: React.FC = () => {
               {/* Quick Field Summary */}
               <div className="grid grid-cols-2 gap-2 bg-surface p-3 rounded-lg border border-outline-variant/20 text-xs">
                 <div>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', selectedFieldForDetail.crop, selectedFieldForDetail.crop)}</strong></div>
-                <div>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(selectedFieldForDetail.areaAcres)} {t('farm.acres')}</strong></div>
+                <div>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(selectedFieldForDetail.areaAcres ?? 0)} {t('farm.acres')}</strong></div>
                 <div>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', selectedFieldForDetail.soilType, selectedFieldForDetail.soilType)}</strong></div>
                 <div>{t('farm.worker')}: <strong className="text-on-surface">{selectedFieldForDetail.assignedFarmerName || (selectedFieldForDetail as any).farmerName || t('status.none')}</strong></div>
               </div>
@@ -791,7 +794,7 @@ export const OwnerDashboard: React.FC = () => {
                           <div>{t('ownerDashboard.potassium', 'K')}: <strong>{sub.potassium !== undefined && sub.potassium !== null ? formatNumber(sub.potassium, { maximumFractionDigits: 2 }) : t('common.notAvailable')}</strong></div>
                         </div>
                         <div className="text-on-surface-variant text-[11px]">
-                          {t('farmerDashboard.growthStage', 'Stage')}: <strong className="text-on-surface">{translateGrowthStage(sub.cropGrowthStage)}</strong>
+                          {t('farmerDashboard.growthStage', 'Stage')}: <strong className="text-on-surface">{translateGrowthStage(sub.cropGrowthStage || '')}</strong>
                         </div>
                         {sub.notes && (
                           <p className="italic text-on-surface-variant text-[11px] bg-surface-container/30 p-1.5 rounded">
@@ -993,7 +996,10 @@ export const OwnerDashboard: React.FC = () => {
                   <span className="text-[11px] text-secondary font-data-mono">{t('ownerDashboard.mapboxDrawActive', 'Mapbox GL Draw Active')}</span>
                 </label>
                 <AgroMap
-                  initialCenter={[fieldLng, fieldLat]}
+                  initialCenter={[
+                    Number.isFinite(fieldLng) ? fieldLng : -121.655,
+                    Number.isFinite(fieldLat) ? fieldLat : 36.677
+                  ]}
                   initialZoom={14}
                   boundary={fieldBoundary}
                   path={fieldPath}
@@ -1114,7 +1120,7 @@ export const OwnerDashboard: React.FC = () => {
                               className="accent-primary w-4 h-4 cursor-pointer shrink-0"
                             />
                             <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary font-bold text-xs flex items-center justify-center shrink-0">
-                              {farmer.fullName.charAt(0).toUpperCase()}
+                              {(farmer.fullName || 'Farmer').charAt(0).toUpperCase()}
                             </div>
                             <div className="flex flex-col min-w-0">
                               <span className="font-semibold text-xs text-on-surface truncate">{farmer.fullName}</span>
@@ -1237,7 +1243,7 @@ export const OwnerDashboard: React.FC = () => {
             </div>
 
             <p className="text-sm text-on-surface-variant leading-relaxed">
-              {t('validation.removeFieldConfirm', { name: fieldToDelete.name })}
+              {t('validation.removeFieldConfirm', { name: fieldToDelete?.name || '' })}
             </p>
             <p className="text-xs text-on-surface-variant bg-surface p-3 rounded-lg border border-outline-variant/20">
               {t('ownerDashboard.fieldRemovalWarning', 'This field will be deleted from your farm database. Any active worker assignment will be cleared.')}
@@ -1399,7 +1405,7 @@ export const OwnerDashboard: React.FC = () => {
             <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-sm shrink-0">
-                  {targetFarmerForReviews.fullName.charAt(0).toUpperCase()}
+                  {(targetFarmerForReviews.fullName || 'Farmer').charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col">
                   <h3 className="font-headline-md text-headline-md font-bold text-on-surface">
@@ -1427,7 +1433,7 @@ export const OwnerDashboard: React.FC = () => {
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="text-amber-500 text-lg leading-none">★</span>
                   <span className="text-lg font-bold text-on-surface">
-                    {targetFarmerForReviews.averageRating ? targetFarmerForReviews.averageRating.toFixed(1) : '5.0'}
+                    {typeof targetFarmerForReviews.averageRating === 'number' ? targetFarmerForReviews.averageRating.toFixed(1) : '5.0'}
                   </span>
                   <span className="text-xs text-on-surface-variant font-normal">
                     / 5.0
