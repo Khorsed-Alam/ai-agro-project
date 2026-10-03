@@ -34,7 +34,9 @@ export const Navigation: React.FC<NavigationProps> = ({ health, mobileOpen = fal
       key: 'main',
       items: [
         { name: t('navigation.dashboard'), path: '/dashboard', icon: 'home', key: 'dashboard' },
-        { name: t('navigation.farmers'), path: '/farmers', icon: 'groups', key: 'farmers' },
+        userRole === 'farmer'
+          ? { name: t('navigation.workOpportunities'), path: '/farmers', icon: 'travel_explore', key: 'farmers' }
+          : { name: t('navigation.farmers'), path: '/farmers', icon: 'groups', key: 'farmers' },
         { name: t('navigation.oneToOneChat'), path: '/messages', icon: 'chat', key: 'oneToOneChat' },
         { name: t('navigation.myFarm'), path: '/my-farm', icon: 'location_on', key: 'myFarm' },
         { name: t('navigation.fields'), path: '/fields', icon: 'layers', key: 'fields' },

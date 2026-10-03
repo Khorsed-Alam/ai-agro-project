@@ -35,6 +35,9 @@ import {
   removeWorkerFromField,
   freeFarmerFromOwner,
   getFarmerEmploymentMap,
+  applyForFieldWork,
+  getFarmerApplications,
+  getOwnerIncomingApplications,
   notifyEcosystemChange,
   ECOSYSTEM_UPDATED_EVENT,
 } from '../services/ecosystem';
@@ -46,6 +49,10 @@ export const Farmers: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { t, formatNumber, formatDate } = useI18n();
 
+  const isFarmer = userRole === 'farmer';
+  const isOwner = userRole === 'owner' || (!isFarmer && (user?.uid || 'owner_demo') === 'owner_demo');
+  const activeUid = user?.uid || (isFarmer ? 'farmer_01' : 'owner_demo');
+
   const tabFromUrl = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<'assignments' | 'directory'>(
     tabFromUrl === 'directory' ? 'directory' : 'assignments'
@@ -56,8 +63,18 @@ export const Farmers: React.FC = () => {
   const [farms, setFarms] = useState<Farm[]>([]);
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<AssignmentRequest[]>([]);
+  const [myApplications, setMyApplications] = useState<AssignmentRequest[]>([]);
+  const [incomingSpecialistApplications, setIncomingSpecialistApplications] = useState<AssignmentRequest[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Apply to Field Modal State (for Farmers)
+  const [applyModalField, setApplyModalField] = useState<Field | null>(null);
+  const [applyWorkType, setApplyWorkType] = useState<string>('Precision Irrigation & Water Dispatch');
+  const [applyProposedRate, setApplyProposedRate] = useState<string>('$120 / day');
+  const [applyCoverNote, setApplyCoverNote] = useState<string>('');
+  const [submittingApplication, setSubmittingApplication] = useState<boolean>(false);
+  const [applyError, setApplyError] = useState<string>('');
 
   // Field Parcels Search & Filters (for Field Parcels & Worker Assignments tab)
   const [fieldSearchQuery, setFieldSearchQuery] = useState('');
@@ -130,11 +147,17 @@ export const Farmers: React.FC = () => {
       if (userRole === 'owner' || activeUid === 'owner_demo') {
         const sent = await getOwnerAssignmentRequests(activeUid);
         setAssignmentRequests(sent);
+        const incomingApps = await getOwnerIncomingApplications(activeUid);
+        setIncomingSpecialistApplications(incomingApps);
       }
 
-      // If user is a farmer, also load incoming requests
-      const incoming = await getFarmerAssignmentRequests(activeUid);
-      setIncomingRequests(incoming.filter((r) => r.status === 'pending'));
+      // If user is a farmer, also load incoming requests and submitted applications
+      if (userRole === 'farmer') {
+        const incoming = await getFarmerAssignmentRequests(activeUid);
+        setIncomingRequests(incoming.filter((r) => r.status === 'pending' && r.initiatedBy !== 'farmer'));
+        const myApps = await getFarmerApplications(activeUid);
+        setMyApplications(myApps);
+      }
 
       // 4. Load Hired Farmer IDs for current owner (historic — used for rating eligibility)
       const hiredIds = await getHiredFarmerIdsForOwner(activeUid, false);
@@ -253,8 +276,12 @@ export const Farmers: React.FC = () => {
     };
   }, [farmers, fields, assignmentRequests, employmentMap]);
 
-  // Open Hire Modal
+  // Open Hire Modal (Owners only — farmers apply to fields instead)
   const openHireModal = (farmer: FarmerProfile) => {
+    if (userRole === 'farmer') {
+      showToast(t('farmers.cannotHireColleague', 'Farmers cannot hire other farmers. You can apply for work on owner fields.'), 'info');
+      return;
+    }
     setHireModalFarmer(farmer);
     setDailyRate(farmer.hourlyRate || '$120 / day');
     setWorkType(t('farmers.workTypeOptions.irrigation', 'Precision Irrigation & Water Dispatch'));
@@ -269,6 +296,127 @@ export const Farmers: React.FC = () => {
       setSelectedFieldId(fields[0].fieldId || (fields[0] as any).id);
     } else {
       setSelectedFieldId('');
+    }
+  };
+
+  // Open Apply Modal (Farmers applying for work on an owner's field parcel)
+  const openApplyModal = (field: Field) => {
+    setApplyModalField(field);
+    setApplyWorkType(t('farmers.workTypeOptions.irrigation', 'Precision Irrigation & Water Dispatch'));
+    const activeUid = user?.uid || 'farmer_01';
+    const myProfile = farmers.find((f) => f.uid === activeUid);
+    setApplyProposedRate(myProfile?.hourlyRate || '$120 / day');
+    setApplyCoverNote('');
+    setApplyError('');
+  };
+
+  // Farmer Submits Work Application for an Owner's Field
+  const handleSubmitApplication = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!applyModalField) return;
+    setSubmittingApplication(true);
+    setApplyError('');
+
+    try {
+      const activeUid = user?.uid || 'farmer_01';
+      const myProfile = farmers.find((f) => f.uid === activeUid);
+      const farmerName = myProfile?.fullName || user?.displayName || 'Registered Specialist';
+
+      const farm = farms.find((fm) => fm.farmId === applyModalField.farmId);
+      const targetFarmName = farm?.name || 'Primary Agricultural Estate';
+      const targetOwnerId = applyModalField.ownerId || farm?.ownerId || 'owner_demo';
+      const targetOwnerName = 'Farm Owner';
+
+      const res = await applyForFieldWork({
+        farmerId: activeUid,
+        farmerName,
+        ownerId: targetOwnerId,
+        ownerName: targetOwnerName,
+        farmId: applyModalField.farmId || 'farm_salinas_01',
+        farmName: targetFarmName,
+        fieldId: applyModalField.fieldId || (applyModalField as any).id,
+        fieldName: applyModalField.name,
+        workType: applyWorkType,
+        proposedRate: applyProposedRate,
+        message: applyCoverNote,
+      });
+
+      if (!res.success) {
+        setApplyError(res.error || 'Failed to submit work application.');
+        return;
+      }
+
+      showToast(
+        t('farmers.applicationSuccess', { fieldName: applyModalField.name, ownerName: targetOwnerName }),
+        'success'
+      );
+      setApplyModalField(null);
+      notifyEcosystemChange();
+      await loadData();
+    } catch (err: any) {
+      setApplyError(err?.message || 'Error submitting application.');
+    } finally {
+      setSubmittingApplication(false);
+    }
+  };
+
+  // Owner Accepts Specialist's Work Application
+  const handleOwnerAcceptApplication = async (req: AssignmentRequest) => {
+    setActionLoadingId(req.id);
+    try {
+      const res = await approveAssignmentRequest(req.id);
+      if (res.success) {
+        showToast(
+          t('farmers.applicationAccepted', { farmerName: req.farmerName, fieldName: req.fieldName }),
+          'success'
+        );
+        notifyEcosystemChange();
+        await loadData();
+      } else {
+        showToast(res.error || 'Failed to approve application', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Error approving application', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // Owner Declines Specialist's Work Application
+  const handleOwnerDeclineApplication = async (requestId: string) => {
+    setActionLoadingId(requestId);
+    try {
+      const res = await rejectAssignmentRequest(requestId);
+      if (res.success) {
+        showToast(t('farmers.rejectSuccess', 'Assignment request declined.'), 'info');
+        notifyEcosystemChange();
+        await loadData();
+      } else {
+        showToast(res.error || 'Failed to decline application', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Error declining application', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // Farmer Withdraws Their Submitted Application
+  const handleFarmerWithdrawApplication = async (requestId: string) => {
+    setActionLoadingId(requestId);
+    try {
+      const res = await cancelAssignmentRequest(requestId);
+      if (res.success) {
+        showToast('Application withdrawn successfully', 'info');
+        notifyEcosystemChange();
+        await loadData();
+      } else {
+        showToast(res.error || 'Failed to withdraw application', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Error withdrawing application', 'error');
+    } finally {
+      setActionLoadingId(null);
     }
   };
 
@@ -799,13 +947,80 @@ export const Farmers: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Incoming Requests Banner (For Farmers) ── */}
-      {incomingRequests.length > 0 && (
+      {/* ── BANNERS SECTION ── */}
+
+      {/* 1. Incoming Specialist Applications Banner (For Farm Owners) */}
+      {isOwner && incomingSpecialistApplications.length > 0 && (
+        <div className="bg-secondary/10 border border-secondary/30 rounded-2xl p-space-lg shadow-sm">
+          <div className="flex items-center gap-space-sm pb-space-sm border-b border-secondary/20">
+            <span className="material-symbols-outlined text-secondary text-[24px]">contact_page</span>
+            <div>
+              <h2 className="font-headline-sm text-headline-sm text-secondary font-semibold">
+                {t('farmers.incomingSpecialistApplications', 'Incoming Specialist Applications')} ({incomingSpecialistApplications.length})
+              </h2>
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                {t('farmers.incomingSpecialistSubtitle', 'Farmers have applied to work on your fields. Review their proposals and accept to assign.')}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md mt-space-md">
+            {incomingSpecialistApplications.map((app) => (
+              <div
+                key={app.id}
+                className="bg-surface-container-lowest p-space-md rounded-xl border border-outline-variant flex flex-col justify-between gap-space-sm shadow-sm"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-headline-sm text-primary font-semibold">{app.farmerName}</span>
+                      <span className="text-label-sm text-on-surface-variant block">Applied for: <strong>{app.fieldName}</strong> ({app.farmName})</span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg text-label-sm font-semibold bg-emerald-500/20 text-emerald-800 dark:text-emerald-300">
+                      {app.dailyRate || '$120 / day'}
+                    </span>
+                  </div>
+                  {app.workType && (
+                    <div className="inline-block mt-2 px-2 py-0.5 rounded bg-surface-container text-label-sm font-medium text-primary">
+                      {app.workType}
+                    </div>
+                  )}
+                  {app.message && (
+                    <p className="font-body-sm text-body-sm text-on-surface-variant italic mt-2 bg-surface-container-low p-2 rounded">
+                      "{app.message}"
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-space-sm pt-space-xs border-t border-surface-container">
+                  <button
+                    disabled={actionLoadingId === app.id}
+                    onClick={() => handleOwnerDeclineApplication(app.id)}
+                    className="px-space-md py-1.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {t('farmers.declineApplication', 'Decline')}
+                  </button>
+                  <button
+                    disabled={actionLoadingId === app.id}
+                    onClick={() => handleOwnerAcceptApplication(app)}
+                    className="flex items-center gap-1 px-space-md py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md font-semibold hover:opacity-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                    <span>{actionLoadingId === app.id ? 'Assigning...' : t('farmers.acceptAndHire', 'Accept & Assign')}</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 2. Incoming Proposals Banner (For Farmers invited by Owners) */}
+      {isFarmer && incomingRequests.length > 0 && (
         <div className="bg-primary/10 border border-primary/20 rounded-2xl p-space-lg shadow-sm">
           <div className="flex items-center gap-space-sm pb-space-sm border-b border-primary/20">
             <span className="material-symbols-outlined text-primary text-[24px]">contact_mail</span>
             <div>
-              <h2 className="font-headline-sm text-headline-sm text-primary">
+              <h2 className="font-headline-sm text-headline-sm text-primary font-semibold">
                 {t('farmers.incomingRequestsTitle', 'Your Incoming Work Requests')} ({incomingRequests.length})
               </h2>
               <p className="font-body-sm text-body-sm text-on-surface-variant">
@@ -845,19 +1060,94 @@ export const Farmers: React.FC = () => {
                   <button
                     disabled={actionLoadingId === req.id}
                     onClick={() => handleFarmerDecline(req.id)}
-                    className="px-space-md py-1.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors disabled:opacity-50"
+                    className="px-space-md py-1.5 rounded-lg border border-outline-variant text-on-surface-variant font-label-md text-label-md font-semibold hover:bg-surface-container transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     {t('farmers.declineProposal', 'Decline')}
                   </button>
                   <button
                     disabled={actionLoadingId === req.id}
                     onClick={() => handleFarmerAccept(req)}
-                    className="flex items-center gap-1 px-space-md py-1.5 rounded-lg bg-secondary text-on-secondary font-label-md text-label-md font-semibold hover:opacity-95 transition-all shadow-sm disabled:opacity-50"
+                    className="flex items-center gap-1 px-space-md py-1.5 rounded-lg bg-secondary text-on-secondary font-label-md text-label-md font-semibold hover:opacity-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[16px]">check_circle</span>
                     <span>{actionLoadingId === req.id ? 'Accepting...' : t('farmers.acceptProposal', 'Accept Proposal')}</span>
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Submitted Work Applications Banner (For Farmers who applied to owner fields) */}
+      {isFarmer && myApplications.length > 0 && (
+        <div className="bg-surface-container-lowest border border-outline-variant rounded-2xl p-space-lg shadow-sm">
+          <div className="flex items-center gap-space-sm pb-space-sm border-b border-surface-container">
+            <span className="material-symbols-outlined text-primary text-[24px]">send</span>
+            <div>
+              <h2 className="font-headline-sm text-headline-sm text-primary font-semibold">
+                {t('farmers.myApplicationsTitle', 'Your Submitted Work Applications')} ({myApplications.length})
+              </h2>
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                Track status of your work applications sent to farm owners.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md mt-space-md">
+            {myApplications.map((app) => (
+              <div
+                key={app.id}
+                className="bg-surface-container-low p-space-md rounded-xl border border-outline-variant/60 flex flex-col justify-between gap-space-sm"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-headline-sm text-primary font-semibold">{app.fieldName}</span>
+                      <span className="text-label-sm text-on-surface-variant block">{app.farmName} • {app.ownerName}</span>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-label-xs font-semibold ${
+                      app.status === 'approved'
+                        ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                        : app.status === 'rejected'
+                        ? 'bg-error-container text-error'
+                        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                    }`}>
+                      {app.status === 'approved'
+                        ? 'Approved & Assigned'
+                        : app.status === 'rejected'
+                        ? 'Declined'
+                        : t('farmers.applicationPending', 'Application Sent • Waiting for Owner Review')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className="font-data-mono text-label-sm font-semibold text-on-surface bg-surface-container px-2 py-0.5 rounded">
+                      {app.dailyRate || '$120 / day'}
+                    </span>
+                    {app.workType && (
+                      <span className="text-label-sm text-primary bg-primary/10 px-2 py-0.5 rounded font-medium">
+                        {app.workType}
+                      </span>
+                    )}
+                  </div>
+                  {app.message && (
+                    <p className="text-label-sm text-on-surface-variant italic mt-1.5 bg-surface-container-lowest p-2 rounded">
+                      "{app.message}"
+                    </p>
+                  )}
+                </div>
+
+                {app.status === 'pending' && (
+                  <div className="flex justify-end pt-space-xs border-t border-surface-container">
+                    <button
+                      type="button"
+                      disabled={actionLoadingId === app.id}
+                      onClick={() => handleFarmerWithdrawApplication(app.id)}
+                      className="px-3 py-1 rounded-lg text-error hover:bg-error-container text-label-sm font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      {t('farmers.withdrawApplication', 'Withdraw')}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -875,8 +1165,8 @@ export const Farmers: React.FC = () => {
               : 'border-transparent text-on-surface-variant hover:text-on-surface hover:border-outline-variant'
           }`}
         >
-          <span className="material-symbols-outlined text-[20px]">assignment_ind</span>
-          <span>{t('farmers.tabFieldAssignments', 'Field Parcels & Worker Assignments')}</span>
+          <span className="material-symbols-outlined text-[20px]">{isFarmer ? 'work' : 'assignment_ind'}</span>
+          <span>{isFarmer ? t('farmers.tabWorkOpportunities', 'Open Work Opportunities') : t('farmers.tabFieldAssignments', 'Field Parcels & Worker Assignments')}</span>
           <span className="ml-1 px-2 py-0.5 rounded-full text-label-sm font-data-mono bg-primary-container/40 text-primary">
             {fieldMetrics.total}
           </span>
@@ -908,24 +1198,28 @@ export const Farmers: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm bg-surface-container-lowest p-space-md rounded-2xl border border-outline-variant shadow-2xs">
             <div className="flex items-center gap-space-sm">
               <div className="w-10 h-10 rounded-xl bg-primary-container text-on-primary flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[22px]">landscape</span>
+                <span className="material-symbols-outlined text-[22px]">{isFarmer ? 'work' : 'landscape'}</span>
               </div>
               <div>
                 <h2 className="font-headline-sm text-headline-sm text-primary font-semibold">
-                  {t('farmers.fieldParcelsTitle', 'Field Parcels & Worker Assignments')}
+                  {isFarmer
+                    ? t('farmers.workOpportunitiesTitle', 'Available Farm Fields & Work Opportunities')
+                    : t('farmers.fieldParcelsTitle', 'Field Parcels & Worker Assignments')}
                 </h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  {t('farmers.fieldParcelsSubtitle', 'Manage your farm fields, monitor health status, and assign or reassign dedicated specialists.')}
+                  {isFarmer
+                    ? t('farmers.workOpportunitiesSubtitle', 'Browse fields owned by agricultural enterprises and apply with your proposed rate and specialization.')
+                    : t('farmers.fieldParcelsSubtitle', 'Manage your farm fields, monitor health status, and assign or reassign dedicated specialists.')}
                 </p>
               </div>
             </div>
             <button
               type="button"
-              onClick={() => navigate('/owner-dashboard')}
+              onClick={() => navigate(isFarmer ? '/farmer-dashboard' : '/owner-dashboard')}
               className="flex items-center gap-1.5 px-space-md py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-label-md font-semibold transition-all self-start sm:self-auto cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px] text-primary">map</span>
-              <span>{t('farmers.viewInGis', 'View in GIS Map')}</span>
+              <span>{isFarmer ? 'Farmer Workspace' : t('farmers.viewInGis', 'View in GIS Map')}</span>
               <span className="material-symbols-outlined text-[16px]">open_in_new</span>
             </button>
           </div>
@@ -936,7 +1230,7 @@ export const Farmers: React.FC = () => {
             <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider font-semibold">
-                  {t('farmers.totalParcels', 'Total Field Parcels')}
+                  {isFarmer ? 'Available Farm Fields' : t('farmers.totalParcels', 'Total Field Parcels')}
                 </span>
                 <span className="material-symbols-outlined text-primary text-[24px]">grid_view</span>
               </div>
@@ -945,61 +1239,71 @@ export const Farmers: React.FC = () => {
                   {formatNumber(fieldMetrics.total)}
                 </span>
                 <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
-                  Active agricultural production sectors
+                  {isFarmer ? 'Open agricultural sectors across estates' : 'Active agricultural production sectors'}
                 </p>
               </div>
             </div>
 
-            {/* Assigned Parcels */}
+            {/* Assigned / Active Fields */}
             <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="font-label-sm text-label-sm uppercase text-secondary tracking-wider font-semibold">
-                  {t('farmers.assignedParcels', 'Assigned Parcels')}
+                  {isFarmer ? 'Your Assigned Fields' : t('farmers.assignedParcels', 'Assigned Parcels')}
                 </span>
                 <span className="material-symbols-outlined text-secondary text-[24px]">person_check</span>
               </div>
               <div className="my-space-md">
                 <span className="font-display-lg text-display-lg text-secondary font-semibold tabular-nums">
-                  {formatNumber(fieldMetrics.assigned)}
+                  {formatNumber(
+                    isFarmer
+                      ? fields.filter((f) => getFieldAssignedWorkers(f).some((w) => w.farmerId === (user?.uid || 'farmer_01'))).length
+                      : fieldMetrics.assigned
+                  )}
                 </span>
                 <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
-                  Parcels under active specialist management
+                  {isFarmer ? 'Fields you are currently tasked with' : 'Parcels under active specialist management'}
                 </p>
               </div>
             </div>
 
-            {/* Unassigned Parcels */}
+            {/* Unassigned / Open for Applications */}
             <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant flex flex-col justify-between">
               <div className="flex items-center justify-between">
                 <span className="font-label-sm text-label-sm uppercase text-amber-600 dark:text-amber-400 tracking-wider font-semibold">
-                  {t('farmers.unassignedParcels', 'Unassigned Parcels')}
+                  {isFarmer ? 'Open for Applications' : t('farmers.unassignedParcels', 'Unassigned Parcels')}
                 </span>
-                <span className="material-symbols-outlined text-amber-500 text-[24px]">person_off</span>
+                <span className="material-symbols-outlined text-amber-500 text-[24px]">person_add</span>
               </div>
               <div className="my-space-md">
                 <span className="font-display-lg text-display-lg text-amber-600 dark:text-amber-400 font-semibold tabular-nums">
                   {formatNumber(fieldMetrics.unassigned)}
                 </span>
                 <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
-                  Autonomous or awaiting worker dispatch
+                  {isFarmer ? 'Parcels seeking specialist workers' : 'Autonomous or awaiting worker dispatch'}
                 </p>
               </div>
             </div>
 
-            {/* Attention Parcels */}
+            {/* Attention / Submitted Applications */}
             <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant flex flex-col justify-between">
               <div className="flex items-center justify-between">
-                <span className="font-label-sm text-label-sm uppercase text-error tracking-wider font-semibold">
-                  {t('farmers.attentionParcels', 'Needs Attention')}
+                <span className="font-label-sm text-label-sm uppercase text-on-surface-variant tracking-wider font-semibold">
+                  {isFarmer ? 'Your Applications' : t('farmers.attentionParcels', 'Needs Attention')}
                 </span>
-                <span className="material-symbols-outlined text-error text-[24px]">warning</span>
+                <span className="material-symbols-outlined text-primary text-[24px]">
+                  {isFarmer ? 'send' : 'warning'}
+                </span>
               </div>
               <div className="my-space-md">
-                <span className="font-display-lg text-display-lg text-error font-semibold tabular-nums">
-                  {formatNumber(fieldMetrics.attention)}
+                <span className="font-display-lg text-display-lg text-primary font-semibold tabular-nums">
+                  {formatNumber(
+                    isFarmer
+                      ? myApplications.filter((a) => a.status === 'pending').length
+                      : fieldMetrics.attention
+                  )}
                 </span>
                 <p className="font-body-sm text-body-sm text-on-surface-variant mt-1">
-                  Parcels with water or pathogen alerts
+                  {isFarmer ? 'Submitted applications under owner review' : 'Parcels with water or pathogen alerts'}
                 </p>
               </div>
             </div>
@@ -1234,32 +1538,36 @@ export const Farmers: React.FC = () => {
                                     >
                                       <span className="material-symbols-outlined text-[16px]">chat</span>
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openRateModal(fProfile, field.fieldId || (field as any).id, field.name)}
-                                      className="w-7 h-7 rounded-md hover:bg-amber-500/10 text-amber-500 flex items-center justify-center transition-colors cursor-pointer"
-                                      title={t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">rate_review</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={actionLoadingId === rowLoadingId}
-                                      onClick={() => handleUnassignWorkerFromField(field, worker)}
-                                      className="w-7 h-7 rounded-md hover:bg-error-container text-error flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
-                                      title={t('farmers.removeFromField', 'Remove from this field')}
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">person_remove</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={actionLoadingId === worker.farmerId}
-                                      onClick={() => handleEndContract(fProfile)}
-                                      className="w-7 h-7 rounded-md hover:bg-emerald-500/10 text-emerald-600 flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
-                                      title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
-                                    >
-                                      <span className="material-symbols-outlined text-[16px]">task_alt</span>
-                                    </button>
+                                    {!isFarmer && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => openRateModal(fProfile, field.fieldId || (field as any).id, field.name)}
+                                          className="w-7 h-7 rounded-md hover:bg-amber-500/10 text-amber-500 flex items-center justify-center transition-colors cursor-pointer"
+                                          title={t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}
+                                        >
+                                          <span className="material-symbols-outlined text-[16px]">rate_review</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={actionLoadingId === rowLoadingId}
+                                          onClick={() => handleUnassignWorkerFromField(field, worker)}
+                                          className="w-7 h-7 rounded-md hover:bg-error-container text-error flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
+                                          title={t('farmers.removeFromField', 'Remove from this field')}
+                                        >
+                                          <span className="material-symbols-outlined text-[16px]">person_remove</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={actionLoadingId === worker.farmerId}
+                                          onClick={() => handleEndContract(fProfile)}
+                                          className="w-7 h-7 rounded-md hover:bg-emerald-500/10 text-emerald-600 flex items-center justify-center transition-colors disabled:opacity-50 cursor-pointer"
+                                          title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                                        >
+                                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
                                 </li>
                               );
@@ -1271,7 +1579,9 @@ export const Farmers: React.FC = () => {
                               {t('farmers.unassignedField', 'Unassigned — No active worker')}
                             </span>
                             <span className="text-label-xs text-on-surface-variant/80 block">
-                              {t('farmers.unassignedFieldHint', 'Assign one or more specialists to manage field telemetry and operations')}
+                              {isFarmer
+                                ? 'This field parcel is open for specialist applications'
+                                : t('farmers.unassignedFieldHint', 'Assign one or more specialists to manage field telemetry and operations')}
                             </span>
                           </div>
                         )}
@@ -1282,33 +1592,98 @@ export const Farmers: React.FC = () => {
                     <div className="pt-space-xs border-t border-surface-container flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() => navigate('/owner-dashboard')}
+                        onClick={() => navigate(isFarmer ? '/farmer-dashboard' : '/owner-dashboard')}
                         className="text-label-sm text-primary hover:text-primary/80 font-semibold flex items-center gap-1 cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[16px]">pin_drop</span>
                         <span>{t('farmers.viewInGis', 'GIS Map')}</span>
                       </button>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openAssignModalForField(field)}
-                          className={`flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-label-sm font-semibold transition-all shadow-2xs cursor-pointer ${
-                            isAssigned
-                              ? 'bg-primary-container text-on-primary hover:bg-primary'
-                              : 'bg-secondary text-on-secondary hover:opacity-95'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[16px]">
-                            {isAssigned ? 'group_add' : 'person_add'}
-                          </span>
-                          <span>
-                            {isAssigned
-                              ? t('farmers.addAnotherWorker', 'Add Specialist')
-                              : t('farmers.assignWorker', 'Assign Worker')}
-                          </span>
-                        </button>
-                      </div>
+                      {isFarmer ? (
+                        <div className="flex items-center gap-2">
+                          {(() => {
+                            const activeFarmerUid = user?.uid || 'farmer_01';
+                            const isCurrentFarmerAssigned = fieldWorkers.some((w) => w.farmerId === activeFarmerUid);
+                            const currentFarmerPendingApp = myApplications.find(
+                              (a) => (a.fieldId === field.fieldId || a.fieldId === (field as any).id) && a.status === 'pending'
+                            );
+                            const currentEmployer = employmentMap[activeFarmerUid];
+                            const isEmployedByOtherOwner = currentEmployer && currentEmployer !== (field.ownerId || 'owner_demo');
+
+                            if (isCurrentFarmerAssigned) {
+                              return (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-label-sm font-semibold">
+                                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                  {t('farmers.alreadyAssignedHere', 'Currently Assigned Here')}
+                                </span>
+                              );
+                            }
+
+                            if (currentFarmerPendingApp) {
+                              return (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-label-xs font-semibold">
+                                    <span className="material-symbols-outlined text-[14px]">schedule</span>
+                                    {t('farmers.applicationPending', 'Application Sent • Waiting for Owner Review')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleFarmerWithdrawApplication(currentFarmerPendingApp.id)}
+                                    className="px-2 py-1 rounded-lg text-error hover:bg-error-container text-label-xs font-semibold transition-colors cursor-pointer"
+                                  >
+                                    {t('farmers.withdrawApplication', 'Withdraw')}
+                                  </button>
+                                </div>
+                              );
+                            }
+
+                            if (isEmployedByOtherOwner) {
+                              return (
+                                <button
+                                  disabled
+                                  className="px-3 py-1.5 rounded-xl bg-surface-container/70 text-on-surface-variant/70 border border-outline-variant/40 text-label-sm font-medium flex items-center gap-1.5 cursor-not-allowed"
+                                  title="Under contract with another owner. Ask them to free you to apply."
+                                >
+                                  <span className="material-symbols-outlined text-[16px] text-amber-500">lock</span>
+                                  <span>Busy (Other Owner)</span>
+                                </button>
+                              );
+                            }
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => openApplyModal(field)}
+                                className="px-4 py-2 rounded-xl bg-primary text-on-primary hover:opacity-95 text-label-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">send</span>
+                                <span>{t('farmers.applyForWork', 'Apply for Work')}</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openAssignModalForField(field)}
+                            className={`flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-label-sm font-semibold transition-all shadow-2xs cursor-pointer ${
+                              isAssigned
+                                ? 'bg-primary-container text-on-primary hover:bg-primary'
+                                : 'bg-secondary text-on-secondary hover:opacity-95'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">
+                              {isAssigned ? 'group_add' : 'person_add'}
+                            </span>
+                            <span>
+                              {isAssigned
+                                ? t('farmers.addAnotherWorker', 'Add Specialist')
+                                : t('farmers.assignWorker', 'Assign Worker')}
+                            </span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1760,113 +2135,170 @@ export const Farmers: React.FC = () => {
 
                 {/* ── Card Action Buttons ── */}
                 <div className="pt-space-md border-t border-surface-container flex flex-col gap-2">
-                  {/* State A: Available → Request to Work */}
-                  {isAvailable && (
-                    <div className="flex flex-col gap-1.5">
-                      <button
-                        onClick={() => openHireModal(farmer)}
-                        className="w-full bg-primary text-on-primary font-label-md text-label-md py-2.5 px-space-md rounded-xl font-semibold flex items-center justify-center gap-space-xs hover:opacity-95 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">person_add</span>
-                        <span>{t('farmers.hireFarmer', 'Request to Work')}</span>
-                      </button>
-                      {isFarmerHired(farmer.uid) && (
-                        <button
-                          type="button"
-                          onClick={() => openRateModal(farmer, assignedField?.fieldId, assignedField?.name)}
-                          className="w-full py-1.5 px-space-md rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                        >
-                          <span className="material-symbols-outlined text-[16px] text-amber-500">rate_review</span>
-                          <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
-                        </button>
+                  {isFarmer ? (
+                    /* ── Farmer Viewing Directory: Cannot Hire Colleague ── */
+                    <div className="flex flex-col gap-2">
+                      {farmer.uid === activeUid ? (
+                        /* Self Profile */
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            onClick={() => openDetailModal(farmer)}
+                            className="w-full bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-label-md text-label-md py-2.5 px-space-md rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">account_circle</span>
+                            <span>{t('farmers.viewMyProfile', 'View My Profile & Reviews')}</span>
+                          </button>
+                          <div className="px-2.5 py-1.5 rounded-lg bg-surface-container text-label-xs text-on-surface-variant flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[14px] text-primary">info</span>
+                            <span>{t('farmers.yourSpecialistCardNotice', 'This is your public specialist profile visible to farm owners.')}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Colleague Profile */
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => navigate('/messages')}
+                              className="flex-1 bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md py-2 px-space-sm rounded-xl font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[18px] text-primary">chat</span>
+                              <span>{t('farmers.messageColleague', 'Message Colleague')}</span>
+                            </button>
+                            <button
+                              onClick={() => openDetailModal(farmer)}
+                              className="flex-1 bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md py-2 px-space-sm rounded-xl font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[18px] text-secondary">visibility</span>
+                              <span>{t('farmers.viewDetails', 'View Profile')}</span>
+                            </button>
+                          </div>
+                          <div className="px-2.5 py-1.5 rounded-lg bg-surface-container text-label-xs text-on-surface-variant flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[14px] text-primary">info</span>
+                            <span>{t('farmers.cannotHireColleague', 'Farmers cannot hire other farmers. You can apply for work on owner fields.')}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('assignments')}
+                            className="text-label-xs text-primary font-semibold hover:underline flex items-center justify-center gap-1 py-0.5 cursor-pointer"
+                          >
+                            <span>{t('farmers.tabWorkOpportunities', 'Browse Open Work Opportunities')}</span>
+                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                          </button>
+                        </div>
                       )}
                     </div>
-                  )}
+                  ) : (
+                    /* ── Owner Actions: Hire, Simulate, Message, Free, Rate ── */
+                    <>
+                      {/* State A: Available → Request to Work */}
+                      {isAvailable && (
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            onClick={() => openHireModal(farmer)}
+                            className="w-full bg-primary text-on-primary font-label-md text-label-md py-2.5 px-space-md rounded-xl font-semibold flex items-center justify-center gap-space-xs hover:opacity-95 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">person_add</span>
+                            <span>{t('farmers.hireFarmer', 'Request to Work')}</span>
+                          </button>
+                          {isFarmerHired(farmer.uid) && (
+                            <button
+                              type="button"
+                              onClick={() => openRateModal(farmer, assignedField?.fieldId, assignedField?.name)}
+                              className="w-full py-1.5 px-space-md rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                            >
+                              <span className="material-symbols-outlined text-[16px] text-amber-500">rate_review</span>
+                              <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
 
-                  {/* State B: Pending → Simulation Trigger (for demo) + Cancel */}
-                  {isPending && pendingRequest && (
-                    <div className="flex flex-col gap-1.5">
-                      <button
-                        disabled={actionLoadingId === pendingRequest.id}
-                        onClick={() => handleSimulateAccept(pendingRequest.id, farmer.fullName, pendingRequest.fieldName)}
-                        className="w-full bg-secondary text-on-secondary font-label-md text-label-md py-2 px-space-md rounded-xl font-semibold flex items-center justify-center gap-space-xs hover:opacity-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">task_alt</span>
-                        <span>
-                          {actionLoadingId === pendingRequest.id ? 'Processing...' : t('farmers.simulateAccept', 'Simulate Accept (Demo)')}
-                        </span>
-                      </button>
-                      <button
-                        disabled={actionLoadingId === pendingRequest.id}
-                        onClick={() => handleCancelRequest(pendingRequest.id)}
-                        className="w-full bg-surface-container text-on-surface-variant hover:text-error font-label-md text-label-md py-1.5 px-space-md rounded-xl font-medium transition-colors cursor-pointer"
-                      >
-                        {t('farmers.cancelProposal', 'Cancel Proposal')}
-                      </button>
-                    </div>
-                  )}
+                      {/* State B: Pending → Simulation Trigger (for demo) + Cancel */}
+                      {isPending && pendingRequest && (
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            disabled={actionLoadingId === pendingRequest.id}
+                            onClick={() => handleSimulateAccept(pendingRequest.id, farmer.fullName, pendingRequest.fieldName)}
+                            className="w-full bg-secondary text-on-secondary font-label-md text-label-md py-2 px-space-md rounded-xl font-semibold flex items-center justify-center gap-space-xs hover:opacity-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">task_alt</span>
+                            <span>
+                              {actionLoadingId === pendingRequest.id ? 'Processing...' : t('farmers.simulateAccept', 'Simulate Accept (Demo)')}
+                            </span>
+                          </button>
+                          <button
+                            disabled={actionLoadingId === pendingRequest.id}
+                            onClick={() => handleCancelRequest(pendingRequest.id)}
+                            className="w-full bg-surface-container text-on-surface-variant hover:text-error font-label-md text-label-md py-1.5 px-space-md rounded-xl font-medium transition-colors cursor-pointer"
+                          >
+                            {t('farmers.cancelProposal', 'Cancel Proposal')}
+                          </button>
+                        </div>
+                      )}
 
-                  {/* State C: Working For You → Message, Finish & Free Farmer, Rate & Comment */}
-                  {isWorking && (
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2">
+                      {/* State C: Working For You → Message, Finish & Free Farmer, Rate & Comment */}
+                      {isWorking && (
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => navigate('/messages')}
+                              className="flex-1 bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md py-2 px-space-sm rounded-xl font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[18px] text-primary">chat</span>
+                              <span>{t('farmers.messageWorker', 'Message')}</span>
+                            </button>
+                            <button
+                              disabled={actionLoadingId === farmer.uid}
+                              onClick={() => handleEndContract(farmer, assignedField)}
+                              className="flex-1 px-space-md py-2 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600/30 font-label-md text-label-md font-semibold transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
+                              title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                              <span>{t('farmers.freeFarmerBtn', 'Finish & Free')}</span>
+                            </button>
+                          </div>
+                          {isFarmerHired(farmer.uid) && (
+                            <button
+                              type="button"
+                              onClick={() => openRateModal(farmer, assignedField?.fieldId, assignedField?.name)}
+                              className="w-full py-2 px-space-md rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                            >
+                              <span className="material-symbols-outlined text-[18px] text-amber-500">rate_review</span>
+                              <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* State D: Busy on Another Farm */}
+                      {status === 'busy' && (
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            disabled
+                            className="w-full bg-surface-container/70 text-on-surface-variant/70 border border-outline-variant/40 font-label-md text-label-md py-2 px-space-md rounded-xl font-medium flex items-center justify-center gap-1.5 cursor-not-allowed"
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-amber-500">lock</span>
+                            <span>{t('farmers.workingForAnotherOwner', 'Working for Another Owner')}</span>
+                          </button>
+                          <button
+                            onClick={() => openDetailModal(farmer)}
+                            className="w-full bg-surface-container text-on-surface-variant font-label-md text-label-md py-2 px-space-md rounded-xl font-medium hover:bg-surface-container-high transition-colors cursor-pointer"
+                          >
+                            {t('farmers.viewDetails', 'View Profile & Reviews')}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Secondary Details Trigger */}
+                      {status !== 'busy' && (
                         <button
-                          onClick={() => navigate('/messages')}
-                          className="flex-1 bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md py-2 px-space-sm rounded-xl font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          onClick={() => openDetailModal(farmer)}
+                          className="text-center font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors py-0.5 cursor-pointer"
                         >
-                          <span className="material-symbols-outlined text-[18px] text-primary">chat</span>
-                          <span>{t('farmers.messageWorker', 'Message')}</span>
-                        </button>
-                        <button
-                          disabled={actionLoadingId === farmer.uid}
-                          onClick={() => handleEndContract(farmer, assignedField)}
-                          className="flex-1 px-space-md py-2 rounded-xl bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600/30 font-label-md text-label-md font-semibold transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1"
-                          title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
-                        >
-                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
-                          <span>{t('farmers.freeFarmerBtn', 'Finish & Free')}</span>
-                        </button>
-                      </div>
-                      {isFarmerHired(farmer.uid) && (
-                        <button
-                          type="button"
-                          onClick={() => openRateModal(farmer, assignedField?.fieldId, assignedField?.name)}
-                          className="w-full py-2 px-space-md rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-label-md text-label-md font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                        >
-                          <span className="material-symbols-outlined text-[18px] text-amber-500">rate_review</span>
-                          <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
+                          {t('farmers.viewDetails', 'View Full Background & Reviews')}
                         </button>
                       )}
-                    </div>
-                  )}
-
-                  {/* State D: Busy on Another Farm */}
-                  {status === 'busy' && (
-                    <div className="flex flex-col gap-1.5">
-                      <button
-                        disabled
-                        className="w-full bg-surface-container/70 text-on-surface-variant/70 border border-outline-variant/40 font-label-md text-label-md py-2 px-space-md rounded-xl font-medium flex items-center justify-center gap-1.5 cursor-not-allowed"
-                      >
-                        <span className="material-symbols-outlined text-[16px] text-amber-500">lock</span>
-                        <span>{t('farmers.workingForAnotherOwner', 'Working for Another Owner')}</span>
-                      </button>
-                      <button
-                        onClick={() => openDetailModal(farmer)}
-                        className="w-full bg-surface-container text-on-surface-variant font-label-md text-label-md py-2 px-space-md rounded-xl font-medium hover:bg-surface-container-high transition-colors cursor-pointer"
-                      >
-                        {t('farmers.viewDetails', 'View Profile & Reviews')}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Secondary Details Trigger */}
-                  {status !== 'busy' && (
-                    <button
-                      onClick={() => openDetailModal(farmer)}
-                      className="text-center font-label-sm text-label-sm text-on-surface-variant hover:text-primary transition-colors py-0.5 cursor-pointer"
-                    >
-                      {t('farmers.viewDetails', 'View Full Background & Reviews')}
-                    </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -2035,6 +2467,165 @@ export const Farmers: React.FC = () => {
                     <>
                       <span className="material-symbols-outlined text-[18px]">send</span>
                       <span>{t('farmers.sendProposal', 'Send Work Proposal')}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal 1.5: Apply for Field Work (Farmer → Owner) ── */}
+      {applyModalField && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-space-md animate-fade-in"
+          onClick={() => setApplyModalField(null)}
+        >
+          <div
+            className="bg-surface-container-lowest rounded-2xl max-w-lg w-full p-space-xl shadow-2xl border border-outline-variant max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-space-md border-b border-surface-container">
+              <div className="flex items-center gap-space-sm">
+                <div className="w-10 h-10 rounded-xl bg-primary text-on-primary flex items-center justify-center font-semibold text-lg shadow-sm">
+                  <span className="material-symbols-outlined">send</span>
+                </div>
+                <div>
+                  <h3 className="font-headline-sm text-headline-sm text-primary font-semibold">
+                    {t('farmers.applyModalTitle', 'Apply for Field Work')}
+                  </h3>
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">
+                    {t('farmers.applyModalSubtitle', { fieldName: applyModalField.name })}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setApplyModalField(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container text-on-surface-variant cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {applyError && (
+              <div className="mt-space-md p-space-sm rounded-xl bg-error-container text-error text-body-sm font-medium flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{applyError}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSubmitApplication} className="mt-space-lg space-y-space-md">
+              {/* Target Field Info Card */}
+              <div className="p-3 rounded-xl bg-surface-container border border-surface-container-high flex items-center justify-between">
+                <div>
+                  <div className="text-label-xs text-on-surface-variant font-medium">Target Field & Crop</div>
+                  <div className="text-body-md font-semibold text-on-surface">
+                    {applyModalField.name} ({applyModalField.crop})
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-label-xs text-on-surface-variant font-medium">Area</div>
+                  <div className="text-body-sm font-semibold text-primary">
+                    {formatNumber(applyModalField.areaAcres ?? (applyModalField as any).area ?? 12)} acres
+                  </div>
+                </div>
+              </div>
+
+              {/* Work Role Preset / Custom */}
+              <div>
+                <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1">
+                  {t('farmers.workType', 'Specialist Role / Responsibility')} *
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-2">
+                  {[
+                    t('farmers.workTypeOptions.irrigation', 'Precision Irrigation & Water Dispatch'),
+                    t('farmers.workTypeOptions.scouting', 'Disease Detection & Leaf Scouting'),
+                    t('farmers.workTypeOptions.soil', 'Soil N-P-K & Telemetry Logging'),
+                    t('farmers.workTypeOptions.cultivation', 'Comprehensive Field Management'),
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setApplyWorkType(preset)}
+                      className={`px-2.5 py-1.5 rounded-lg text-label-sm text-left border transition-all cursor-pointer ${
+                        applyWorkType === preset
+                          ? 'bg-primary-container text-on-primary border-primary font-semibold'
+                          : 'bg-surface-container-low border-outline-variant text-on-surface hover:bg-surface-container'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={applyWorkType}
+                  onChange={(e) => setApplyWorkType(e.target.value)}
+                  placeholder={t('farmers.workTypePlaceholder')}
+                  required
+                  className="w-full px-space-md py-2 rounded-xl bg-surface-container-low border border-outline-variant font-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Proposed Daily Compensation */}
+              <div>
+                <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1">
+                  {t('farmers.proposedRate', 'Your Proposed Daily Rate')} *
+                </label>
+                <input
+                  type="text"
+                  value={applyProposedRate}
+                  onChange={(e) => setApplyProposedRate(e.target.value)}
+                  placeholder="$120 / day"
+                  required
+                  className="w-full px-space-md py-2.5 rounded-xl bg-surface-container-low border border-outline-variant font-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Cover Note & Specialist Skills */}
+              <div>
+                <label className="block font-label-sm text-label-sm font-semibold text-on-surface mb-1">
+                  {t('farmers.coverNote', 'Proposal Note & Experience for Owner')}
+                </label>
+                <textarea
+                  rows={3}
+                  value={applyCoverNote}
+                  onChange={(e) => setApplyCoverNote(e.target.value)}
+                  placeholder={t(
+                    'farmers.coverNotePlaceholder',
+                    'Describe your experience with this crop, irrigation equipment familiarity, and when you can start...'
+                  )}
+                  className="w-full px-space-md py-2 rounded-xl bg-surface-container-low border border-outline-variant font-body-md text-on-surface focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-space-sm flex items-center justify-end gap-space-sm border-t border-surface-container">
+                <button
+                  type="button"
+                  onClick={() => setApplyModalField(null)}
+                  className="px-space-lg py-2.5 rounded-xl border border-outline-variant font-label-md text-on-surface hover:bg-surface-container transition-colors cursor-pointer"
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingApplication}
+                  className="bg-primary text-on-primary font-label-md text-label-md px-space-xl py-2.5 rounded-xl font-semibold flex items-center gap-space-xs hover:opacity-95 transition-all shadow-md disabled:opacity-50 cursor-pointer"
+                >
+                  {submittingApplication ? (
+                    <>
+                      <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                      <span>{t('farmers.submittingApplication', 'Submitting Application...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[18px]">send</span>
+                      <span>{t('farmers.submitApplication', 'Submit Application')}</span>
                     </>
                   )}
                 </button>

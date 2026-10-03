@@ -52,6 +52,8 @@ export const FarmerDashboard: React.FC = () => {
 
   // Assignment Requests & History State
   const [assignmentRequests, setAssignmentRequests] = useState<AssignmentRequest[]>([]);
+  const [myApplications, setMyApplications] = useState<AssignmentRequest[]>([]);
+  const [withdrawingAppId, setWithdrawingAppId] = useState<string | null>(null);
   const [assignmentHistory, setAssignmentHistory] = useState<AssignmentRecord[]>([]);
   const [requestActionLoading, setRequestActionLoading] = useState<string | null>(null);
   const [requestActionMsg, setRequestActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -113,7 +115,10 @@ export const FarmerDashboard: React.FC = () => {
 
       // Load Assignment Requests & History
       const reqs = await getFarmerAssignmentRequests(activeUid);
-      setAssignmentRequests(reqs.filter((r) => r.status === 'pending'));
+      // Offers sent by farm owners to this farmer
+      setAssignmentRequests(reqs.filter((r) => r.status === 'pending' && r.initiatedBy !== 'farmer'));
+      // Applications sent by this farmer to farm owners
+      setMyApplications(reqs.filter((r) => r.initiatedBy === 'farmer'));
 
       const hist = await getFarmerAssignmentHistory(activeUid);
       setAssignmentHistory(hist);
@@ -173,6 +178,23 @@ export const FarmerDashboard: React.FC = () => {
       notifyEcosystemChange();
     } else {
       setRequestActionMsg({ type: 'error', text: t('errors.rejectRequest') });
+    }
+  };
+
+  // Handle Farmer Withdrawing Their Submitted Application
+  const handleWithdrawApplication = async (requestId: string) => {
+    setWithdrawingAppId(requestId);
+    const res = await rejectAssignmentRequest(requestId);
+    setWithdrawingAppId(null);
+    if (res.success) {
+      setRequestActionMsg({
+        type: 'success',
+        text: t('farmers.applicationWithdrawn', 'Application withdrawn successfully.'),
+      });
+      loadFarmerData();
+      notifyEcosystemChange();
+    } else {
+      setRequestActionMsg({ type: 'error', text: res.error || 'Failed to withdraw application.' });
     }
   };
 
@@ -350,8 +372,17 @@ export const FarmerDashboard: React.FC = () => {
 
           <button
             type="button"
+            onClick={() => navigate('/farmers?tab=assignments')}
+            className="h-10 px-4 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:bg-primary-container transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+            <span>{t('farmers.applyForWorkBtn', 'Apply for Work')}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => navigate('/messages')}
-            className="h-10 px-4 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:bg-primary-container transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
+            className="h-10 px-4 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
           >
             <span className="material-symbols-outlined text-[18px]">chat</span>
             <span>{t('farmerDashboard.chatWithOwner', 'Chat with Owner')}</span>
@@ -383,7 +414,94 @@ export const FarmerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ── Pending Assignment Requests (Section 20) ────────────────────────── */}
+      {/* ── Section A: My Submitted Work Applications (Farmer → Owner) ── */}
+      {myApplications.length > 0 && (
+        <section className="bg-surface-container-low p-space-lg rounded-xl border border-outline-variant shadow-sm flex flex-col gap-space-md animate-fade-in">
+          <div className="flex items-center justify-between border-b border-outline-variant/40 pb-2">
+            <div className="flex items-center gap-2 text-on-surface">
+              <span className="material-symbols-outlined text-[24px] text-primary">send</span>
+              <h2 className="font-headline-md text-headline-md font-bold">
+                {t('farmers.mySubmittedApplications', 'Your Submitted Work Applications ({count})', {
+                  count: formatNumber(myApplications.length),
+                })}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/farmers?tab=assignments')}
+              className="text-label-sm text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>{t('farmers.applyForMoreFields', 'Apply to More Fields')}</span>
+              <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+            {myApplications.map((app) => (
+              <div
+                key={app.id}
+                className="bg-surface p-space-md rounded-xl border border-outline-variant flex flex-col justify-between gap-space-sm shadow-xs"
+              >
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-secondary font-semibold uppercase tracking-wider">
+                      {app.ownerName || 'Farm Owner'}
+                    </span>
+                    {app.status === 'pending' && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                        {t('farmers.applicationPendingReview', 'Pending Owner Review')}
+                      </span>
+                    )}
+                    {app.status === 'approved' && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                        {t('farmers.applicationApprovedStatus', 'Approved & Assigned')}
+                      </span>
+                    )}
+                    {app.status === 'rejected' && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-surface-container text-on-surface-variant">
+                        {t('farmers.applicationDeclinedStatus', 'Declined')}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold">
+                    {app.farmName} — {app.fieldName}
+                  </h3>
+                  <div className="flex items-center gap-3 text-xs text-on-surface-variant font-medium">
+                    <span>{app.workType || 'Field Specialist'}</span>
+                    <span>•</span>
+                    <span className="font-data-mono font-semibold text-primary">{app.dailyRate || '$120 / day'}</span>
+                  </div>
+                  {app.message && (
+                    <p className="text-xs text-on-surface-variant italic bg-surface-container/40 p-2 rounded-lg mt-1">
+                      "{app.message}"
+                    </p>
+                  )}
+                </div>
+
+                {app.status === 'pending' && (
+                  <div className="pt-2 border-t border-outline-variant/20 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={withdrawingAppId === app.id}
+                      onClick={() => handleWithdrawApplication(app.id)}
+                      className="px-3 py-1 rounded-lg text-xs font-semibold text-error hover:bg-error-container/30 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">undo</span>
+                      <span>
+                        {withdrawingAppId === app.id
+                          ? t('farmers.withdrawing', 'Withdrawing...')
+                          : t('farmers.withdrawApplication', 'Withdraw')}
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Section B: Incoming Work Requests from Farm Owners (Owner → Farmer) ── */}
       {assignmentRequests.length > 0 && (
         <section className="bg-surface-container-low p-space-lg rounded-xl border border-outline-variant shadow-sm flex flex-col gap-space-md">
           <div className="flex items-center gap-2 text-on-surface border-b border-outline-variant/40 pb-2">
@@ -902,6 +1020,44 @@ export const FarmerDashboard: React.FC = () => {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Empty State: No Active Field Assignment ── */}
+      {!selectedField && (
+        <section className="bg-surface-container-lowest p-space-xl rounded-2xl shadow-sm border border-outline-variant/30 flex flex-col items-center justify-center text-center gap-space-md py-12">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shadow-inner">
+            <span className="material-symbols-outlined text-[36px]">nature_people</span>
+          </div>
+          <div className="max-w-md space-y-1">
+            <h2 className="font-headline-md text-headline-md text-on-surface font-bold">
+              {t('farmers.noActiveFieldTitle', 'No Active Field Assignment')}
+            </h2>
+            <p className="text-body-sm text-on-surface-variant">
+              {t(
+                'farmers.noActiveFieldDesc',
+                'You are currently free and available for farm work. Explore open fields from farm owners and submit work applications with your specialist rates!'
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => navigate('/farmers?tab=assignments')}
+              className="h-10 px-5 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:opacity-95 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">travel_explore</span>
+              <span>{t('farmers.applyForWorkBtn', 'Apply for Work on Owner Fields')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/farmers?tab=farmers')}
+              className="h-10 px-4 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">group</span>
+              <span>{t('farmers.directoryTab', 'Specialist Directory')}</span>
+            </button>
+          </div>
+        </section>
       )}
 
       {/* ── Unassign Confirmation Modal (Section 23) ────────────────────────── */}

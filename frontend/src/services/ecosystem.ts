@@ -2038,6 +2038,7 @@ export interface AssignmentRequest {
   dailyRate?: string;
   message?: string;
   status: AssignmentRequestStatus;
+  initiatedBy?: 'owner' | 'farmer';
   createdAt: any;
   updatedAt?: any;
   approvedAt?: any;
@@ -2337,8 +2338,8 @@ export async function getFieldActiveAssignment(fieldId: string): Promise<Assignm
 }
 
 /**
- * Owner creates an assignment request for a farmer to work a field.
- * Enforces: farmer must be available, field must be available.
+ * Owner creates an assignment request OR farmer applies for work on an owner's field parcel.
+ * Enforces: exclusivity (one owner at a time), non-duplicate assignment, non-duplicate pending application.
  */
 export async function createAssignmentRequest(params: {
   ownerId: string;
@@ -2352,15 +2353,19 @@ export async function createAssignmentRequest(params: {
   workType?: string;
   dailyRate?: string;
   message?: string;
+  initiatedBy?: 'owner' | 'farmer';
 }): Promise<{ success: boolean; error?: string; request?: AssignmentRequest }> {
 
   // Rule 1: Worker exclusivity — farmer must not be employed by ANOTHER owner
   const activeEmployer = await getFarmerActiveEmployer(params.farmerId);
   const currentOwner = params.ownerId || 'owner_demo';
   if (activeEmployer && activeEmployer.ownerId !== currentOwner) {
+    const isFarmerApply = params.initiatedBy === 'farmer';
     return {
       success: false,
-      error: `This specialist is currently employed by another farm owner (${activeEmployer.ownerName || 'Another Farm'}). They must finish their work and be freed before you can hire them.`,
+      error: isFarmerApply
+        ? `You are currently under contract with another farm owner (${activeEmployer.ownerName || 'Another Farm'}). You must finish that work and be freed before applying to a new owner.`
+        : `This specialist is currently employed by another farm owner (${activeEmployer.ownerName || 'Another Farm'}). They must finish their work and be freed before you can hire them.`,
     };
   }
 
@@ -2370,24 +2375,47 @@ export async function createAssignmentRequest(params: {
   if (targetField) {
     const existingWorkers = getFieldAssignedWorkers(targetField);
     if (existingWorkers.some((w) => w.farmerId === params.farmerId)) {
-      return { success: false, error: 'This specialist is already assigned to this field parcel.' };
+      return {
+        success: false,
+        error: params.initiatedBy === 'farmer'
+          ? 'You are already assigned as an active specialist on this field parcel.'
+          : 'This specialist is already assigned to this field parcel.',
+      };
     }
   }
 
-  // Rule 3: No pending request to the same field or from the same farmer already pending
+  // Rule 3: No duplicate pending request to the same field
   if (db) {
     try {
       const qExisting = query(
         collection(db, 'assignment_requests'),
         where('farmerId', '==', params.farmerId),
+        where('fieldId', '==', params.fieldId),
         where('status', '==', 'pending')
       );
       const existingSnap = await getDocs(qExisting);
       if (!existingSnap.empty) {
-        return { success: false, error: 'A pending assignment request already exists for this farmer.' };
+        return {
+          success: false,
+          error: params.initiatedBy === 'farmer'
+            ? 'You have already submitted an application for this field parcel. Please wait for owner review.'
+            : 'A pending assignment request already exists for this field.',
+        };
       }
     } catch {
       // Proceed
+    }
+  } else {
+    const dupPending = inMemoryAssignmentRequests.some(
+      (r) => r.farmerId === params.farmerId && r.fieldId === params.fieldId && r.status === 'pending'
+    );
+    if (dupPending) {
+      return {
+        success: false,
+        error: params.initiatedBy === 'farmer'
+          ? 'You have already submitted an application for this field parcel. Please wait for owner review.'
+          : 'A pending assignment request already exists for this field.',
+      };
     }
   }
 
@@ -2396,6 +2424,7 @@ export async function createAssignmentRequest(params: {
     ...params,
     id: requestId,
     status: 'pending',
+    initiatedBy: params.initiatedBy || 'owner',
     createdAt: new Date().toISOString(),
   };
 
@@ -2408,13 +2437,24 @@ export async function createAssignmentRequest(params: {
         createdAt: serverTimestamp(),
       });
 
-      // Notify farmer
+      // Notification recipient:
+      // If initiated by farmer → recipient is owner!
+      // If initiated by owner → recipient is farmer!
+      const isFarmerInitiated = params.initiatedBy === 'farmer';
+      const recipientId = isFarmerInitiated ? params.ownerId : params.farmerId;
+      const notifTitle = isFarmerInitiated
+        ? 'New Field Work Application'
+        : 'New Field Assignment Request';
+      const notifMessage = isFarmerInitiated
+        ? `${params.farmerName} has applied to work on ${params.fieldName} at ${params.farmName}.`
+        : `${params.ownerName} wants to assign you to ${params.fieldName} at ${params.farmName}.`;
+
       const notifId = `notif_areq_${Date.now()}`;
       await setDoc(doc(db, 'notifications', notifId), {
         id: notifId,
-        recipientId: params.farmerId,
-        title: 'New Field Assignment Request',
-        message: `${params.ownerName} wants to assign you to ${params.fieldName} at ${params.farmName}.`,
+        recipientId,
+        title: notifTitle,
+        message: notifMessage,
         type: 'assignment',
         read: false,
         requestId,
@@ -2594,13 +2634,22 @@ export async function approveAssignmentRequest(requestId: string): Promise<{ suc
       recordOwnerHiredFarmer(request.ownerId || 'owner_demo', request.farmerId, request.fieldId);
       await assignFarmerToField(request.fieldId, request.farmerId, request.farmerName, request.ownerId, request.workType, request.dailyRate);
 
-      // Notify owner
+      // Notify the appropriate party:
+      // If initiated by farmer → farmer gets notified that owner approved their application!
+      // If initiated by owner → owner gets notified that farmer accepted their proposal!
+      const isFarmerApp = request.initiatedBy === 'farmer';
+      const notifRecipientId = isFarmerApp ? request.farmerId : request.ownerId;
+      const notifTitle = isFarmerApp ? 'Work Application Approved' : 'Assignment Request Approved';
+      const notifMessage = isFarmerApp
+        ? `${request.ownerName} approved your work application for ${request.fieldName}! You are now assigned to this field parcel.`
+        : `${request.farmerName} approved your assignment request for ${request.fieldName}.`;
+
       const notifId = `notif_approved_${Date.now()}`;
       await setDoc(doc(db, 'notifications', notifId), {
         id: notifId,
-        recipientId: request.ownerId,
-        title: 'Assignment Request Approved',
-        message: `${request.farmerName} approved your assignment request for ${request.fieldName}.`,
+        recipientId: notifRecipientId,
+        title: notifTitle,
+        message: notifMessage,
         type: 'assignment',
         read: false,
         createdAt: serverTimestamp(),
@@ -2655,13 +2704,20 @@ export async function rejectAssignmentRequest(requestId: string): Promise<{ succ
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
-      // Notify owner
+      // Notify the appropriate party
+      const isFarmerApp = request.initiatedBy === 'farmer';
+      const notifRecipientId = isFarmerApp ? request.farmerId : request.ownerId;
+      const notifTitle = isFarmerApp ? 'Work Application Declined' : 'Assignment Request Rejected';
+      const notifMessage = isFarmerApp
+        ? `${request.ownerName} was unable to accept your work application for ${request.fieldName}.`
+        : `${request.farmerName} rejected your assignment request for ${request.fieldName}.`;
+
       const notifId = `notif_rejected_${Date.now()}`;
       await setDoc(doc(db, 'notifications', notifId), {
         id: notifId,
-        recipientId: request.ownerId,
-        title: 'Assignment Request Rejected',
-        message: `${request.farmerName} rejected your assignment request for ${request.fieldName}.`,
+        recipientId: notifRecipientId,
+        title: notifTitle,
+        message: notifMessage,
         type: 'assignment',
         read: false,
         createdAt: serverTimestamp(),
@@ -2673,6 +2729,46 @@ export async function rejectAssignmentRequest(requestId: string): Promise<{ succ
 
   notifyEcosystemChange();
   return { success: true };
+}
+
+/**
+ * Farmer applies for work on an owner's field parcel.
+ * Farmers cannot hire other farmers — they apply for work to farm owners.
+ */
+export async function applyForFieldWork(params: {
+  farmerId: string;
+  farmerName: string;
+  ownerId: string;
+  ownerName: string;
+  farmId: string;
+  farmName: string;
+  fieldId: string;
+  fieldName: string;
+  workType?: string;
+  proposedRate?: string;
+  message?: string;
+}): Promise<{ success: boolean; error?: string; request?: AssignmentRequest }> {
+  return createAssignmentRequest({
+    ...params,
+    dailyRate: params.proposedRate || '$120 / day',
+    initiatedBy: 'farmer',
+  });
+}
+
+/**
+ * Get all work applications submitted by a farmer
+ */
+export async function getFarmerApplications(farmerId: string): Promise<AssignmentRequest[]> {
+  const allReqs = await getFarmerAssignmentRequests(farmerId);
+  return allReqs.filter((r) => r.initiatedBy === 'farmer');
+}
+
+/**
+ * Get pending incoming applications from specialists for a farm owner's fields
+ */
+export async function getOwnerIncomingApplications(ownerId: string): Promise<AssignmentRequest[]> {
+  const allReqs = await getOwnerAssignmentRequests(ownerId);
+  return allReqs.filter((r) => r.initiatedBy === 'farmer' && r.status === 'pending');
 }
 
 /**

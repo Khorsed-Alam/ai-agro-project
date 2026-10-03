@@ -25,6 +25,7 @@ import {
   getFarmerRatings,
   getHiredFarmerIdsForOwner,
   getFieldAssignedWorkers,
+  getOwnerIncomingApplications,
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
   freeFarmerFromOwner,
@@ -92,6 +93,7 @@ export const OwnerDashboard: React.FC = () => {
   const [ratingModalSuccess, setRatingModalSuccess] = useState<string>('');
   const [ratingModalError, setRatingModalError] = useState<string>('');
   const [hiredFarmerIds, setHiredFarmerIds] = useState<Set<string>>(new Set());
+  const [incomingAppsCount, setIncomingAppsCount] = useState<number>(0);
 
   // Filter only farmers hired by this owner (actively assigned or with approved contracts)
   const hiredFarmers = useMemo(() => {
@@ -234,6 +236,10 @@ export const OwnerDashboard: React.FC = () => {
       // Load hired farmer IDs for the active owner
       const hiredList = await getHiredFarmerIdsForOwner(user?.uid || 'owner_demo');
       setHiredFarmerIds(new Set(hiredList));
+
+      // Load pending specialist work applications for this owner
+      const incomingApps = await getOwnerIncomingApplications(user?.uid || 'owner_demo');
+      setIncomingAppsCount(incomingApps.length);
 
       // Select first field by default for detailed inspection if none selected
       if (fieldList.length > 0) {
@@ -389,6 +395,41 @@ export const OwnerDashboard: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Incoming Specialist Applications Banner */}
+      {incomingAppsCount > 0 && (
+        <div className="p-space-md rounded-2xl bg-gradient-to-r from-primary/10 via-secondary/10 to-primary/5 border border-primary/30 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+              <span className="material-symbols-outlined text-[20px]">assignment_ind</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-headline-sm text-body-md font-bold text-on-surface">
+                  {t('farmers.incomingApplicationsTitle', 'Incoming Specialist Applications')}
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-primary text-on-primary text-[11px] font-bold">
+                  {incomingAppsCount}
+                </span>
+              </div>
+              <p className="text-body-sm text-on-surface-variant">
+                {t(
+                  'farmers.incomingApplicationsDesc',
+                  'Specialists have applied to work on your farm fields. Review their rates and approve assignments.'
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/farmers?tab=assignments')}
+            className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold hover:opacity-95 transition-all shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span>{t('farmers.reviewApplications', 'Review & Assign Farmers')}</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        </div>
+      )}
 
       {/* Metric Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
