@@ -24,6 +24,7 @@ import {
   submitFarmerRating,
   getFarmerRatings,
   getHiredFarmerIdsForOwner,
+  getFieldAssignedWorkers,
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
 } from '../services/ecosystem';
@@ -94,8 +95,8 @@ export const OwnerDashboard: React.FC = () => {
   // Filter only farmers hired by this owner (actively assigned or with approved contracts)
   const hiredFarmers = useMemo(() => {
     return farmers.filter((farmer) => {
-      const isAssigned = fields.some(
-        (f) => f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid
+      const isAssigned = fields.some((f) =>
+        getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
       );
       return isAssigned || hiredFarmerIds.has(farmer.uid);
     });
@@ -112,7 +113,9 @@ export const OwnerDashboard: React.FC = () => {
   };
 
   const handleOpenRateModal = (farmer: FarmerProfile, fieldId?: string) => {
-    const isHired = fields.some((f) => f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid) || hiredFarmerIds.has(farmer.uid);
+    const isHired =
+      fields.some((f) => getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)) ||
+      hiredFarmerIds.has(farmer.uid);
     if (!isHired) {
       alert(t('farmerRating.onlyHiredCanRate', 'Only farm owners who have hired this farmer for work can submit ratings and comments.'));
       return;
@@ -552,8 +555,10 @@ export const OwnerDashboard: React.FC = () => {
             ) : (
               <div className="flex flex-col space-y-2.5">
                 {hiredFarmers.map((farmer) => {
-                  const assignedFieldObj = fields.find((f) => f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid);
-                  const isAssigned = Boolean(assignedFieldObj);
+                  const assignedFieldsList = fields.filter((f) =>
+                    getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
+                  );
+                  const isAssigned = assignedFieldsList.length > 0;
                   return (
                     <div
                       key={farmer.uid}
@@ -596,14 +601,14 @@ export const OwnerDashboard: React.FC = () => {
                           }`}
                         >
                           {isAssigned
-                            ? t('ownerDashboard.assignedToField', 'Assigned to {field}', { field: assignedFieldObj?.name || '' })
+                            ? t('ownerDashboard.assignedToField', 'Assigned to {field}', { field: assignedFieldsList.map((f) => f.name).join(', ') })
                             : t('farmerRating.verifiedEmployer', 'Hired Specialist')}
                         </span>
 
                         {/* Rate Worker Button (Always active since they are hired) */}
                         <button
                           type="button"
-                          onClick={() => handleOpenRateModal(farmer, assignedFieldObj?.fieldId)}
+                          onClick={() => handleOpenRateModal(farmer, assignedFieldsList[0]?.fieldId)}
                           className="h-8 px-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
                           title={t('farmerRating.rateWorker', 'Rate & Comment on Farmer')}
                           aria-label={t('farmerRating.rateWorker', 'Rate & Comment on Farmer')}
@@ -659,7 +664,7 @@ export const OwnerDashboard: React.FC = () => {
                 <div>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', selectedFieldForDetail.crop, selectedFieldForDetail.crop)}</strong></div>
                 <div>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(selectedFieldForDetail.areaAcres ?? 0)} {t('farm.acres')}</strong></div>
                 <div>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', selectedFieldForDetail.soilType, selectedFieldForDetail.soilType)}</strong></div>
-                <div>{t('farm.worker')}: <strong className="text-on-surface">{selectedFieldForDetail.assignedFarmerName || (selectedFieldForDetail as any).farmerName || t('status.none')}</strong></div>
+                <div>{t('farm.worker')}: <strong className="text-on-surface">{getFieldAssignedWorkers(selectedFieldForDetail).length > 0 ? getFieldAssignedWorkers(selectedFieldForDetail).map((w) => w.farmerName).join(', ') : t('status.none')}</strong></div>
               </div>
 
               {/* Latest Submissions Feed */}
@@ -1225,7 +1230,7 @@ export const OwnerDashboard: React.FC = () => {
 
             {/* Modal Footer Actions */}
             <div className="flex items-center justify-between pt-space-xs border-t border-outline-variant/20">
-              {fields.some((f) => f.assignedFarmerId === targetFarmerForReviews.uid || (f as any).farmerId === targetFarmerForReviews.uid) ||
+              {fields.some((f) => getFieldAssignedWorkers(f).some((w) => w.farmerId === targetFarmerForReviews.uid)) ||
               hiredFarmerIds.has(targetFarmerForReviews.uid) ? (
                 <button
                   type="button"
