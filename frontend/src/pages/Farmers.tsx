@@ -38,6 +38,7 @@ import {
   applyForFieldWork,
   getFarmerApplications,
   getOwnerIncomingApplications,
+  getOwnerAccountForField,
   notifyEcosystemChange,
   ECOSYSTEM_UPDATED_EVENT,
 } from '../services/ecosystem';
@@ -102,6 +103,7 @@ export const Farmers: React.FC = () => {
   const [detailFarmer, setDetailFarmer] = useState<FarmerProfile | null>(null);
   const [detailReviews, setDetailReviews] = useState<FarmerRating[]>([]);
   const [loadingReviews, setLoadingReviews] = useState<boolean>(false);
+  const [detailModalTab, setDetailModalTab] = useState<'profile' | 'opportunities'>('profile');
 
   // Hired Farmers Tracking & Rate Modal State
   const [hiredFarmerIds, setHiredFarmerIds] = useState<Set<string>>(new Set());
@@ -180,6 +182,16 @@ export const Farmers: React.FC = () => {
       window.removeEventListener(ECOSYSTEM_UPDATED_EVENT, loadData);
     };
   }, [user, userRole]);
+
+  useEffect(() => {
+    const applyFieldParam = searchParams.get('applyField');
+    if (applyFieldParam && fields.length > 0) {
+      const found = fields.find((f) => f.fieldId === applyFieldParam || (f as any).id === applyFieldParam);
+      if (found) {
+        openApplyModal(found);
+      }
+    }
+  }, [searchParams, fields]);
 
   // Fields of THIS owner where the farmer is currently one of the assigned workers
   const getMyFieldsForFarmer = (farmerId: string): Field[] =>
@@ -322,10 +334,10 @@ export const Farmers: React.FC = () => {
       const myProfile = farmers.find((f) => f.uid === activeUid);
       const farmerName = myProfile?.fullName || user?.displayName || 'Registered Specialist';
 
-      const farm = farms.find((fm) => fm.farmId === applyModalField.farmId);
-      const targetFarmName = farm?.name || 'Primary Agricultural Estate';
-      const targetOwnerId = applyModalField.ownerId || farm?.ownerId || 'owner_demo';
-      const targetOwnerName = 'Farm Owner';
+      const ownerInfo = getOwnerAccountForField(applyModalField, farms);
+      const targetFarmName = ownerInfo.farmName;
+      const targetOwnerId = ownerInfo.ownerId;
+      const targetOwnerName = ownerInfo.name;
 
       const res = await applyForFieldWork({
         farmerId: activeUid,
@@ -620,6 +632,7 @@ export const Farmers: React.FC = () => {
   // Open Details & Reviews Modal
   const openDetailModal = async (farmer: FarmerProfile) => {
     setDetailFarmer(farmer);
+    setDetailModalTab('profile');
     setLoadingReviews(true);
     try {
       const reviews = await getFarmerRatings(farmer.uid);
@@ -1408,6 +1421,7 @@ export const Farmers: React.FC = () => {
                 const fieldWorkers = getFieldAssignedWorkers(field);
                 const isAssigned = fieldWorkers.length > 0;
                 const decision = evaluateFieldDecision(field);
+                const ownerInfo = getOwnerAccountForField(field, farms);
 
                 const statusColor =
                   decision.status === 'Critical'
@@ -1433,6 +1447,35 @@ export const Farmers: React.FC = () => {
                     className="bg-surface-container-lowest rounded-2xl border border-outline-variant hover:border-primary/40 p-space-lg shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-space-md"
                   >
                     <div>
+                      {/* ── Owner Account Header Card ── */}
+                      <div className="mb-3.5 p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-base shrink-0 border border-primary/25">
+                            <span className="material-symbols-outlined text-[20px]">corporate_fare</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-label-md font-bold text-on-surface truncate">
+                                {ownerInfo.name}
+                              </span>
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                <span className="material-symbols-outlined text-[11px]">verified</span>
+                                {t('farmers.ownerAccount', 'Owner Account')}
+                              </span>
+                            </div>
+                            <span className="text-label-xs text-on-surface-variant flex items-center gap-1 truncate mt-0.5">
+                              <span className="material-symbols-outlined text-[13px] text-primary">store</span>
+                              <span className="font-medium">{ownerInfo.farmName}</span>
+                              <span>•</span>
+                              <span>{ownerInfo.location}</span>
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-surface-container border border-surface-container-high text-on-surface-variant shrink-0">
+                          {t('farmers.openJobsCount', '{count} Open', { count: formatNumber(1) })}
+                        </span>
+                      </div>
+
                       {/* Top Header: Field Name & Health Badge */}
                       <div className="flex items-start justify-between gap-2 pb-space-sm border-b border-surface-container">
                         <div>
@@ -1657,7 +1700,7 @@ export const Farmers: React.FC = () => {
                                 className="px-4 py-2 rounded-xl bg-primary text-on-primary hover:opacity-95 text-label-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm active:scale-[0.98] cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[18px]">send</span>
-                                <span>{t('farmers.applyForWork', 'Apply for Work')}</span>
+                                <span>{t('farmers.applyForJob', 'Apply for Job')}</span>
                               </button>
                             );
                           })()}
@@ -2479,7 +2522,7 @@ export const Farmers: React.FC = () => {
       {/* ── Modal 1.5: Apply for Field Work (Farmer → Owner) ── */}
       {applyModalField && (
         <div
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-space-md animate-fade-in"
+          className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-space-md animate-fade-in"
           onClick={() => setApplyModalField(null)}
         >
           <div
@@ -2519,6 +2562,39 @@ export const Farmers: React.FC = () => {
 
             {/* Form */}
             <form onSubmit={handleSubmitApplication} className="mt-space-lg space-y-space-md">
+              {/* Target Owner Account Box */}
+              {(() => {
+                const modalOwnerInfo = getOwnerAccountForField(applyModalField, farms);
+                return (
+                  <div className="p-3.5 rounded-xl bg-primary/5 border border-primary/20 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-base shrink-0 border border-primary/25">
+                        <span className="material-symbols-outlined text-[20px]">corporate_fare</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-label-xs text-on-surface-variant font-medium">
+                            {t('farmers.ownerAccount', 'Owner Account')}:
+                          </span>
+                          <span className="font-label-md font-bold text-primary truncate">
+                            {modalOwnerInfo.name}
+                          </span>
+                          <span className="material-symbols-outlined text-emerald-500 text-[14px]">verified</span>
+                        </div>
+                        <div className="text-label-xs text-on-surface-variant flex items-center gap-1 truncate mt-0.5">
+                          <span className="font-semibold text-on-surface">{modalOwnerInfo.farmName}</span>
+                          <span>•</span>
+                          <span>{modalOwnerInfo.location}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 shrink-0">
+                      {t('farmers.ownerAccount', 'Owner Account')}
+                    </span>
+                  </div>
+                );
+              })()}
+
               {/* Target Field Info Card */}
               <div className="p-3 rounded-xl bg-surface-container border border-surface-container-high flex items-center justify-between">
                 <div>
@@ -2625,7 +2701,7 @@ export const Farmers: React.FC = () => {
                   ) : (
                     <>
                       <span className="material-symbols-outlined text-[18px]">send</span>
-                      <span>{t('farmers.submitApplication', 'Submit Application')}</span>
+                      <span>{t('farmers.applyForJob', 'Apply for Job')}</span>
                     </>
                   )}
                 </button>
@@ -2681,13 +2757,154 @@ export const Farmers: React.FC = () => {
               </div>
               <button
                 onClick={() => setDetailFarmer(null)}
-                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container text-on-surface-variant"
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-surface-container text-on-surface-variant cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
 
-            <div className="mt-space-md space-y-space-md">
+            {/* Modal Sub-Tabs: Profile & Reviews vs Work Opportunities */}
+            <div className="flex items-center gap-2 border-b border-surface-container mt-space-sm">
+              <button
+                type="button"
+                onClick={() => setDetailModalTab('profile')}
+                className={`flex items-center gap-1.5 pb-2.5 px-3 font-label-md font-semibold border-b-2 transition-all cursor-pointer ${
+                  detailModalTab === 'profile'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">person</span>
+                <span>{t('farmers.viewPublicProfile', 'Profile & Reviews')}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDetailModalTab('opportunities')}
+                className={`flex items-center gap-1.5 pb-2.5 px-3 font-label-md font-semibold border-b-2 transition-all cursor-pointer ${
+                  detailModalTab === 'opportunities'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">work</span>
+                <span>{t('farmers.workOpportunitiesTab', 'Work Opportunities')}</span>
+                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[11px] font-data-mono bg-primary-container/40 text-primary font-bold">
+                  {fields.length}
+                </span>
+              </button>
+            </div>
+
+            {detailModalTab === 'opportunities' ? (
+              <div className="mt-space-md space-y-space-md">
+                <div className="p-3.5 rounded-xl bg-primary/5 border border-primary/20 flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-primary text-[22px] shrink-0 mt-0.5">business_center</span>
+                  <div>
+                    <h4 className="font-label-md font-bold text-primary">
+                      {t('farmers.workOpportunitiesTab', 'Work Opportunities')}
+                    </h4>
+                    <p className="text-body-sm text-on-surface-variant mt-0.5 leading-relaxed">
+                      {t('farmers.workOpportunitiesModalDesc', 'Available jobs posted by farm owner accounts. Submit your application directly to the owner.')}
+                    </p>
+                  </div>
+                </div>
+
+                {fields.length === 0 ? (
+                  <div className="py-8 text-center text-on-surface-variant font-body-sm">
+                    No open work opportunities at this moment.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {fields.map((field) => {
+                      const ownerInfo = getOwnerAccountForField(field, farms);
+                      const activeFarmerUid = user?.uid || 'farmer_01';
+                      const fieldWorkers = getFieldAssignedWorkers(field);
+                      const isAssigned = fieldWorkers.some((w) => w.farmerId === activeFarmerUid);
+                      const pendingApp = myApplications.find(
+                        (a) => (a.fieldId === field.fieldId || a.fieldId === (field as any).id) && a.status === 'pending'
+                      );
+                      const currentEmployer = employmentMap[activeFarmerUid];
+                      const isEmployedByOtherOwner = currentEmployer && currentEmployer !== (field.ownerId || 'owner_demo');
+
+                      return (
+                        <div
+                          key={field.fieldId || (field as any).id}
+                          className="p-3.5 rounded-xl bg-surface-container-low border border-surface-container hover:border-primary/40 transition-all flex flex-col gap-3 shadow-2xs"
+                        >
+                          {/* Owner Account Card Header */}
+                          <div className="p-2.5 rounded-lg bg-surface-container-lowest border border-outline-variant/30 flex items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 border border-primary/20">
+                                <span className="material-symbols-outlined text-[18px]">corporate_fare</span>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-label-sm font-bold text-on-surface truncate">
+                                    {ownerInfo.name}
+                                  </span>
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                    <span className="material-symbols-outlined text-[10px]">verified</span>
+                                    {t('farmers.ownerAccount', 'Owner Account')}
+                                  </span>
+                                </div>
+                                <span className="text-[11px] text-on-surface-variant flex items-center gap-1 truncate mt-0.5">
+                                  <span className="material-symbols-outlined text-[11px] text-primary">store</span>
+                                  <span className="font-medium">{ownerInfo.farmName}</span>
+                                  <span>•</span>
+                                  <span>{ownerInfo.location}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Field & Job Details */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h5 className="font-label-md font-semibold text-on-surface flex items-center gap-1.5">
+                                <span className="material-symbols-outlined text-primary text-[16px]">agriculture</span>
+                                <span>{field.name}</span>
+                              </h5>
+                              <span className="text-label-xs text-on-surface-variant block mt-0.5">
+                                {field.crop || 'Field Crop'} • {field.areaAcres ? `${field.areaAcres} ac` : '35 ac'} • {field.soilType || 'Loam'}
+                              </span>
+                            </div>
+
+                            {/* Action Button */}
+                            <div className="shrink-0">
+                              {isAssigned ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-[11px] font-semibold">
+                                  <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                                  <span>{t('farmers.alreadyAssignedHere', 'Currently Assigned')}</span>
+                                </span>
+                              ) : pendingApp ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[11px] font-semibold">
+                                  <span className="material-symbols-outlined text-[14px]">schedule</span>
+                                  <span>Pending Review</span>
+                                </span>
+                              ) : isEmployedByOtherOwner ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container text-on-surface-variant border border-outline-variant/40 text-[11px] font-medium">
+                                  <span className="material-symbols-outlined text-[14px] text-amber-500">lock</span>
+                                  <span>Busy (Other Owner)</span>
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openApplyModal(field)}
+                                  className="px-3.5 py-1.5 rounded-lg bg-primary text-on-primary hover:opacity-95 text-label-sm font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer active:scale-95"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">send</span>
+                                  <span>{t('farmers.applyForJob', 'Apply for Job')}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-space-md space-y-space-md">
               <div>
                 <h4 className="font-label-sm uppercase tracking-wider text-on-surface-variant font-semibold">About Operator</h4>
                 <p className="font-body-md text-on-surface mt-1">{detailFarmer.bio}</p>
@@ -2824,6 +3041,7 @@ export const Farmers: React.FC = () => {
                 </div>
               </div>
             </div>
+            )}
 
             <div className="mt-space-lg pt-space-sm border-t border-surface-container flex justify-end">
               <button

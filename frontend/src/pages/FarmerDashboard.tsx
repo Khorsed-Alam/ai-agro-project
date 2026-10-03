@@ -13,9 +13,12 @@ import { useI18n } from '../i18n';
 import { AgroMap } from '../components/map/AgroMap';
 import { uploadToCloudinary } from '../services/cloudinary';
 import { apiService } from '../services/api';
-import type { Field, FieldImageRecord, FieldLandData, AssignmentRequest, AssignmentRecord, FarmerRating } from '../services/ecosystem';
+import type { Field, FieldImageRecord, FieldLandData, AssignmentRequest, AssignmentRecord, FarmerRating, Farm } from '../services/ecosystem';
 import {
   getFarmerAssignedFields,
+  getOwnerFields,
+  getFarms,
+  getOwnerAccountForField,
   submitFieldData,
   recordFieldImage,
   getFieldImages,
@@ -45,6 +48,8 @@ export const FarmerDashboard: React.FC = () => {
     t(growthStageTranslationKeys[value] || 'farmerDashboard.growthStage', value || t('common.unknown'));
 
   const [assignedFields, setAssignedFields] = useState<Field[]>([]);
+  const [allOwnerFields, setAllOwnerFields] = useState<Field[]>([]);
+  const [farms, setFarms] = useState<Farm[]>([]);
   
   const [selectedField, setSelectedField] = useState<Field | null>(null);
   const [fieldImages, setFieldImages] = useState<FieldImageRecord[]>([]);
@@ -126,6 +131,12 @@ export const FarmerDashboard: React.FC = () => {
       // Load Farmer Ratings & Performance Reviews
       const ratings = await getFarmerRatings(activeUid);
       setFarmerRatings(ratings);
+
+      // Load Open Work Opportunities from Owner Accounts
+      const allFields = await getOwnerFields();
+      setAllOwnerFields(allFields);
+      const allFarms = await getFarms();
+      setFarms(allFarms);
     } catch (err) {
       console.error('loadFarmerData error:', err);
     }
@@ -500,6 +511,120 @@ export const FarmerDashboard: React.FC = () => {
           </div>
         </section>
       )}
+
+      {/* ── Section A.5: Open Work Opportunities from Owner Accounts ── */}
+      {(() => {
+        const activeUid = user?.uid || 'farmer_01';
+        const openOpportunities = allOwnerFields.filter((f) => {
+          const workers = f.assignedWorkers || [];
+          const isMeAssigned = workers.some((w) => w.farmerId === activeUid);
+          return !isMeAssigned;
+        });
+
+        if (openOpportunities.length === 0) return null;
+
+        return (
+          <section className="bg-surface-container-low p-space-lg rounded-xl border border-outline-variant shadow-sm flex flex-col gap-space-md animate-fade-in">
+            <div className="flex items-center justify-between border-b border-outline-variant/40 pb-2">
+              <div className="flex items-center gap-2 text-on-surface">
+                <span className="material-symbols-outlined text-[24px] text-primary">work</span>
+                <h2 className="font-headline-md text-headline-md font-bold">
+                  {t('farmers.workOpportunitiesTab', 'Work Opportunities')} ({formatNumber(openOpportunities.length)})
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/farmers?tab=assignments')}
+                className="text-label-sm text-primary font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>{t('common.viewAll', 'View All Opportunities')}</span>
+                <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-md">
+              {openOpportunities.slice(0, 6).map((field) => {
+                const ownerInfo = getOwnerAccountForField(field, farms);
+                const pendingApp = myApplications.find(
+                  (a) => (a.fieldId === field.fieldId || a.fieldId === (field as any).id) && a.status === 'pending'
+                );
+
+                return (
+                  <div
+                    key={field.fieldId || (field as any).id}
+                    className="bg-surface p-space-md rounded-xl border border-outline-variant hover:border-primary/40 transition-all flex flex-col justify-between gap-space-sm shadow-xs"
+                  >
+                    <div className="flex flex-col gap-2">
+                      {/* Owner Account Badge & Name */}
+                      <div className="p-2.5 rounded-lg bg-surface-container-low border border-outline-variant/30 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 border border-primary/20">
+                            <span className="material-symbols-outlined text-[18px]">corporate_fare</span>
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-label-sm font-bold text-on-surface truncate">
+                                {ownerInfo.name}
+                              </span>
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                <span className="material-symbols-outlined text-[10px]">verified</span>
+                                {t('farmers.ownerAccount', 'Owner Account')}
+                              </span>
+                            </div>
+                            <span className="text-[11px] text-on-surface-variant flex items-center gap-1 truncate mt-0.5">
+                              <span className="material-symbols-outlined text-[11px] text-primary">store</span>
+                              <span className="font-medium">{ownerInfo.farmName}</span>
+                              <span>•</span>
+                              <span>{ownerInfo.location}</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Field Details */}
+                      <div>
+                        <h3 className="font-headline-sm text-headline-sm text-on-surface font-bold flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-primary text-[18px]">agriculture</span>
+                          <span>{field.name}</span>
+                        </h3>
+                        <div className="flex items-center gap-2 text-xs text-on-surface-variant font-medium mt-1">
+                          <span>{field.crop || 'Field Crop'}</span>
+                          <span>•</span>
+                          <span className="font-data-mono">{field.areaAcres ? `${field.areaAcres} ac` : '35 ac'}</span>
+                          <span>•</span>
+                          <span>{field.soilType || 'Loam'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <div className="pt-2 border-t border-outline-variant/20 flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-on-surface-variant font-medium">
+                        {field.status || 'Active'}
+                      </span>
+                      {pendingApp ? (
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px]">schedule</span>
+                          <span>Pending Review</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/farmers?tab=assignments&applyField=${field.fieldId || (field as any).id}`)}
+                          className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-primary text-on-primary hover:opacity-95 transition-all flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">send</span>
+                          <span>{t('farmers.applyForJob', 'Apply for Job')}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* ── Section B: Incoming Work Requests from Farm Owners (Owner → Farmer) ── */}
       {assignmentRequests.length > 0 && (

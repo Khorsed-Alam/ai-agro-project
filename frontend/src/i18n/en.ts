@@ -1393,9 +1393,16 @@ export const en = {
     viewPublicProfile: "View Profile & Reviews",
     filterOpenOpportunities: "Open for Applications ({count})",
     freeToApply: "Available • Ready to Apply",
-    busyWithOtherOwner: "Busy under contract with another owner",
     yourPublicProfile: "Your Public Specialist Profile",
-    viewMyProfile: "View My Profile & Reviews"
+    viewMyProfile: "View My Profile & Reviews",
+    applyForJob: "Apply for Job",
+    ownerAccount: "Owner Account",
+    farmOwnerAccount: "Farm Owner Account",
+    openJobsCount: "{count} Open Jobs",
+    workOpportunitiesTab: "Work Opportunities",
+    workOpportunitiesModalDesc: "Available jobs posted by farm owner accounts. Submit your application directly to the owner.",
+    ownerEnterprise: "Enterprise Owner",
+    jobDetails: "Job Details"
   }
 } as const;
 

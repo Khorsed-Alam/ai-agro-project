@@ -56,11 +56,39 @@ export interface FarmerProfile {
 export interface Farm {
   farmId: string;
   ownerId: string;
+  ownerName?: string;
   name: string;
   location: string;
   areaHectares: number;
   description?: string;
   createdAt?: any;
+}
+
+export interface OwnerAccountDetails {
+  ownerId: string;
+  name: string;
+  farmName: string;
+  location: string;
+  verified: boolean;
+}
+
+export function getOwnerAccountForField(field: Field, farmsList: Farm[]): OwnerAccountDetails {
+  const farm = farmsList.find((fm) => fm.farmId === field.farmId);
+  const ownerId = field.ownerId || farm?.ownerId || 'owner_demo';
+  const farmName = field.farmName || farm?.name || 'Salinas Valley Agricultural Enterprise';
+  const ownerName =
+    (field as any)?.ownerName ||
+    farm?.ownerName ||
+    (ownerId === 'owner_demo' ? 'Salinas Valley Agricultural Enterprise' : 'Farm Owner Account');
+  const location = farm?.location || 'Salinas Valley, CA';
+
+  return {
+    ownerId,
+    name: ownerName,
+    farmName,
+    location,
+    verified: true,
+  };
 }
 
 export interface FieldWorkerAssignment {
@@ -76,6 +104,8 @@ export interface Field {
   fieldId: string;
   farmId: string;
   ownerId: string;
+  ownerName?: string;
+  farmName?: string;
   name: string;
   crop: string;
   areaAcres: number;
@@ -345,6 +375,7 @@ const DEFAULT_FARMS: Farm[] = [
   {
     farmId: 'farm_salinas_01',
     ownerId: 'owner_demo',
+    ownerName: 'Salinas Valley Agricultural Enterprise',
     name: 'Green Valley Agriculture Farm',
     location: 'Salinas Valley, Sector 4, CA',
     areaHectares: 420,

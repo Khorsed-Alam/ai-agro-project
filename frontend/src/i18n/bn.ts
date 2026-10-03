@@ -1395,8 +1395,15 @@ export const bn: TranslationResource = {
     viewPublicProfile: "প্রোফাইল ও রিভিউ দেখুন",
     filterOpenOpportunities: "আবেদনের জন্য উন্মুক্ত ({count})",
     freeToApply: "উপলব্ধ • আবেদনের জন্য প্রস্তুত",
-    busyWithOtherOwner: "অন্য খামারে চুক্তিবদ্ধ",
     yourPublicProfile: "আপনার সার্বজনীন বিশেষজ্ঞ প্রোফাইল",
-    viewMyProfile: "আমার প্রোফাইল ও রিভিউ দেখুন"
+    viewMyProfile: "আমার প্রোফাইল ও রিভিউ দেখুন",
+    applyForJob: "কাজে আবেদন করুন",
+    ownerAccount: "মালিকের অ্যাকাউন্ট",
+    farmOwnerAccount: "খামার মালিকের অ্যাকাউন্ট",
+    openJobsCount: "{count}টি উন্মুক্ত কাজ",
+    workOpportunitiesTab: "কাজের সুযোগ",
+    workOpportunitiesModalDesc: "খামার মালিকদের উন্মুক্ত কাজের সুযোগ। সরাসরি মালিকের কাছে আবেদন জমা দিন।",
+    ownerEnterprise: "এন্টারপ্রাইজ মালিক",
+    jobDetails: "কাজের বিবরণ"
   }
 };
