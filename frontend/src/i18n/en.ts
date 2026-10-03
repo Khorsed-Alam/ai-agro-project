@@ -1299,7 +1299,32 @@ export const en = {
       soil: "Soil N-P-K & Telemetry Logging",
       cultivation: "Comprehensive Field Management",
       seasonal: "Harvest & Seasonal Cultivation"
-    }
+    },
+    tabFarmersDirectory: "Farmers Directory",
+    tabFieldAssignments: "Field Parcels & Worker Assignments",
+    fieldParcelsTitle: "Field Parcels & Worker Assignments",
+    fieldParcelsSubtitle: "Manage your farm fields, monitor health status, and assign or reassign dedicated specialists",
+    reassignWorker: "Reassign Worker",
+    unassignWorker: "Unassign Worker",
+    assignWorker: "Assign Worker",
+    unassignedField: "Unassigned — No active worker",
+    viewInGis: "View in GIS Map",
+    viewFieldTelemetry: "View Telemetry",
+    totalParcels: "Total Field Parcels",
+    assignedParcels: "Assigned Parcels",
+    unassignedParcels: "Unassigned Parcels",
+    attentionParcels: "Needs Attention",
+    filterAllParcels: "All Parcels ({count})",
+    filterAssignedParcels: "Assigned ({count})",
+    filterUnassignedParcels: "Unassigned ({count})",
+    filterAttentionParcels: "Needs Attention ({count})",
+    assignSpecialistTitle: "Assign Specialist to {fieldName}",
+    assignSpecialistSubtitle: "Select a registered farmer to manage field operations",
+    assignDirectly: "Assign Directly",
+    sendOffer: "Send Work Proposal",
+    unassignConfirm: "Are you sure you want to unassign {farmerName} from {fieldName}?",
+    unassignedSuccess: "Worker released from field {fieldName}.",
+    directAssignSuccess: "{farmerName} assigned to {fieldName} successfully."
   }
 } as const;
 

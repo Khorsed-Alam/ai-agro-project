@@ -1301,6 +1301,31 @@ export const bn: TranslationResource = {
       soil: "মাটির N-P-K ও টেলিমেট্রি লগিং",
       cultivation: "সার্বিক মাঠ ব্যবস্থাপনা",
       seasonal: "ফসল কাটা ও মৌসুমী চাষাবাদ"
-    }
+    },
+    tabFarmersDirectory: "কৃষক নির্দেশিকা",
+    tabFieldAssignments: "ক্ষেত্র ও কর্মী নিয়োগ",
+    fieldParcelsTitle: "ক্ষেত্র ও কর্মী নিয়োগ",
+    fieldParcelsSubtitle: "আপনার খামারের ক্ষেত্র পরিচালনা করুন, স্বাস্থ্য পর্যবেক্ষণ করুন এবং বিশেষজ্ঞ কর্মী নিয়োগ বা পরিবর্তন করুন",
+    reassignWorker: "পুনরায় নিয়োগ দিন",
+    unassignWorker: "কর্মী মুক্ত করুন",
+    assignWorker: "কর্মী নিয়োগ দিন",
+    unassignedField: "অনিয়োজিত — কোনো সক্রিয় কর্মী নেই",
+    viewInGis: "GIS মানচিত্রে দেখুন",
+    viewFieldTelemetry: "টেলিমেট্রি দেখুন",
+    totalParcels: "মোট জমি",
+    assignedParcels: "কর্মী নিযুক্ত জমি",
+    unassignedParcels: "কর্মীহীন জমি",
+    attentionParcels: "মনোযোগ প্রয়োজন",
+    filterAllParcels: "সব জমি ({count})",
+    filterAssignedParcels: "কর্মী নিযুক্ত ({count})",
+    filterUnassignedParcels: "কর্মীহীন ({count})",
+    filterAttentionParcels: "মনোযোগ প্রয়োজন ({count})",
+    assignSpecialistTitle: "{fieldName}-এ বিশেষজ্ঞ কর্মী নিয়োগ",
+    assignSpecialistSubtitle: "ক্ষেত্রের কার্যক্রম পরিচালনার জন্য একজন নিবন্ধিত কৃষক বেছে নিন",
+    assignDirectly: "সরাসরি নিয়োগ দিন",
+    sendOffer: "কাজের প্রস্তাব পাঠান",
+    unassignConfirm: "আপনি কি নিশ্চিত যে {fieldName} থেকে {farmerName}-এর নিয়োগ বাতিল করতে চান?",
+    unassignedSuccess: "{fieldName} থেকে কর্মী মুক্ত করা হয়েছে।",
+    directAssignSuccess: "{fieldName}-এ {farmerName}-কে সফলভাবে নিয়োগ দেওয়া হয়েছে।"
   }
 };
