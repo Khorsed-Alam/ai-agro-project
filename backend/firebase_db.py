@@ -621,6 +621,10 @@ class AgroDatabaseService:
                         f["assignedFarmName"] = a.get("farmName")
                     else:
                         f["isAssigned"] = False
+                    
+                    # Ensure averageRating and totalRatings are present
+                    f["averageRating"] = float(f.get("averageRating") or 0.0)
+                    f["totalRatings"] = int(f.get("totalRatings") or 0)
             except Exception as e:
                 logger.warning(f"Could not enrich farmers with assignment status: {e}")
 
@@ -863,6 +867,8 @@ class AgroDatabaseService:
                 for d in docs:
                     item = d.to_dict()
                     item["id"] = d.id
+                    if item.get("createdAt") and hasattr(item["createdAt"], "isoformat"):
+                        item["createdAt"] = item["createdAt"].isoformat()
                     messages.append(item)
                 return sorted(messages, key=lambda m: str(m.get("createdAt", "")))
             except Exception as e:
@@ -877,8 +883,11 @@ class AgroDatabaseService:
     @staticmethod
     def save_message(msg_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         import time, random, string
-        msg_id = f"msg_{int(time.time()*1000)}_{''.join(random.choices(string.ascii_lowercase, k=5))}"
+        from datetime import datetime, timezone
+        msg_id = msg_data.get("id") or f"msg_{int(time.time()*1000)}_{''.join(random.choices(string.ascii_lowercase, k=5))}"
         msg_data["id"] = msg_id
+        if "createdAt" not in msg_data or not msg_data["createdAt"]:
+            msg_data["createdAt"] = datetime.now(timezone.utc).isoformat()
 
         if using_admin_sdk and firestore_client:
             try:
@@ -903,6 +912,84 @@ class AgroDatabaseService:
             return _rest_save_document("messages", msg_id, msg_data)
         except Exception:
             return msg_data
+
+    # ─── Farmer Ratings & Reviews ────────────────────────────────────────────────
+
+    @staticmethod
+    def save_farmer_rating(rating_data: Dict[str, Any]) -> Dict[str, Any]:
+        import time
+        from datetime import datetime, timezone
+        rating_id = rating_data.get("id") or f"rate_{int(time.time() * 1000)}"
+        rating_data["id"] = rating_id
+        if "createdAt" not in rating_data or not rating_data["createdAt"]:
+            rating_data["createdAt"] = datetime.now(timezone.utc).isoformat()
+
+        farmer_id = rating_data.get("farmerId")
+
+        # 1. Save rating record in farmer_ratings
+        if using_admin_sdk and firestore_client:
+            try:
+                from google.cloud import firestore as fs
+                data_to_save = {**rating_data, "createdAt": fs.SERVER_TIMESTAMP}
+                firestore_client.collection("farmer_ratings").document(rating_id).set(data_to_save)
+
+                # Recompute and update average rating for the farmer
+                if farmer_id:
+                    try:
+                        ratings_stream = firestore_client.collection("farmer_ratings").where("farmerId", "==", farmer_id).stream()
+                        all_scores = [d.to_dict().get("rating", 5) for d in ratings_stream]
+                        if all_scores:
+                            avg = round(sum(all_scores) / len(all_scores), 1)
+                            firestore_client.collection("users").document(farmer_id).update({
+                                "averageRating": avg,
+                                "totalRatings": len(all_scores)
+                            })
+                    except Exception as err:
+                        logger.warning(f"Could not update user average rating: {err}")
+                return rating_data
+            except Exception as e:
+                logger.error(f"Firestore Admin save_farmer_rating error: {e}")
+
+        try:
+            saved = _rest_save_document("farmer_ratings", rating_id, rating_data)
+            # Update user doc if possible
+            if farmer_id:
+                try:
+                    all_ratings = [r for r in _rest_get_collection("farmer_ratings") if r.get("farmerId") == farmer_id]
+                    if all_ratings:
+                        avg = round(sum(float(r.get("rating", 5)) for r in all_ratings) / len(all_ratings), 1)
+                        _rest_update_document("users", farmer_id, {"averageRating": avg, "totalRatings": len(all_ratings)})
+                except Exception:
+                    pass
+            return saved or rating_data
+        except Exception:
+            return rating_data
+
+    @staticmethod
+    def get_farmer_ratings(farmer_id: str) -> List[Dict[str, Any]]:
+        results = []
+        if using_admin_sdk and firestore_client:
+            try:
+                docs = firestore_client.collection("farmer_ratings").where("farmerId", "==", farmer_id).stream()
+                for d in docs:
+                    item = d.to_dict()
+                    item["id"] = d.id
+                    results.append(item)
+                return sorted(results, key=lambda x: str(x.get("createdAt", "")), reverse=True)
+            except Exception as e:
+                logger.error(f"Firestore Admin get_farmer_ratings error: {e}")
+
+        try:
+            all_r = _rest_get_collection("farmer_ratings")
+            results = [r for r in all_r if r.get("farmerId") == farmer_id]
+            return sorted(results, key=lambda x: str(x.get("createdAt", "")), reverse=True)
+        except Exception:
+            return []
+
+
+save_farmer_rating = AgroDatabaseService.save_farmer_rating
+get_farmer_ratings = AgroDatabaseService.get_farmer_ratings
+
 
 
 

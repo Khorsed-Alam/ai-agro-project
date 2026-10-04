@@ -19,11 +19,11 @@ import { Weather } from './pages/Weather';
 import { AIAnalysis } from './pages/AIAnalysis';
 import { DiseaseDetection } from './pages/DiseaseDetection';
 import { IrrigationPlanner } from './pages/IrrigationPlanner';
-import { Algorithms } from './pages/Algorithms';
 import { Resources } from './pages/Resources';
 import { History } from './pages/History';
 import { Settings } from './pages/Settings';
 import { ChatPage } from './pages/ChatPage';
+import { Farmers } from './pages/Farmers';
 
 export const App: React.FC = () => {
   return (
@@ -48,6 +48,9 @@ export const App: React.FC = () => {
             <Route index element={<Dashboard />} />
             <Route path="dashboard" element={<Dashboard />} />
 
+            {/* Farmers Directory & Hiring */}
+            <Route path="farmers" element={<Farmers />} />
+
             {/* Extension Role Workspaces */}
             <Route path="owner-dashboard" element={<OwnerDashboard />} />
             <Route path="farmer-dashboard" element={<FarmerDashboard />} />
@@ -61,7 +64,6 @@ export const App: React.FC = () => {
             <Route path="ai-analysis" element={<AIAnalysis />} />
             <Route path="disease-detection" element={<DiseaseDetection />} />
             <Route path="irrigation-planner" element={<IrrigationPlanner />} />
-            <Route path="algorithms" element={<Algorithms />} />
 
             {/* Management */}
             <Route path="resources" element={<Resources />} />
@@ -71,6 +73,7 @@ export const App: React.FC = () => {
             {/* Backward compatibility redirects */}
             <Route path="farm" element={<Navigate to="/my-farm" replace />} />
             <Route path="irrigation" element={<Navigate to="/irrigation-planner" replace />} />
+            <Route path="algorithms" element={<Navigate to="/ai-analysis" replace />} />
 
             {/* Catch-all → dashboard */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

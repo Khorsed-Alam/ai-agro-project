@@ -37,7 +37,6 @@
 - [x] AI Analysis & Decision Engine (`/ai-analysis` — `agroai_ai_analysis_workspace.html` + `agroai_decision_engine.md`)
 - [x] Disease Detection (`/disease-detection` — `agroai_disease_detection_studio.html`)
 - [x] Irrigation Planner (`/irrigation-planner` — `agroai_irrigation_planner.html`, replaced old `/irrigation`)
-- [x] Algorithms & Theory (`/algorithms` — Educational Lab covering BFS, DFS, A*, AC-3, K-Means, Decision Tree, CNN, CSP)
 - [x] Resources & Sensors (`/resources` — Telemetry & Sensor Fleet Inventory)
 - [x] History & Logs (`/history` — `agroai_history_logs.html`)
 - [x] Settings (`/settings` — `agroai_settings.html`)
@@ -204,3 +203,16 @@ account's anonymous UID into every update payload, corrupting field ownership me
 - [x] `npm run build` — 0 TypeScript errors, 127 modules transformed
 - [x] No changes to any existing fetcher, UI component, auth flow, AI module, or design file
 - [x] `design_folder/` 100% untouched
+
+---
+
+## Removal of "Algorithms & Theory" Option
+**Status: Completed**
+
+### Changes Made:
+- [x] **Navigation Bar**: Removed `{ name: t('navigation.algorithmsAndTheory'), path: '/algorithms', icon: 'menu_book', key: 'algorithmsAndTheory' }` from `Navigation.tsx`.
+- [x] **Routing**: Removed `<Route path="algorithms" element={<Algorithms />} />` from `App.tsx` and added seamless backward-compatible redirection to `/ai-analysis`.
+- [x] **Page Component**: Deleted `frontend/src/pages/Algorithms.tsx`.
+- [x] **Module Links**: Updated `AI_MODULES` routes in `sampleFields.ts` (`ac3` to `/irrigation-planner`, `bfs`/`dfs`/`astar` to `/ai-analysis`).
+- [x] **Documentation**: Updated `README.md` primary application routes list.
+- [x] **Build Verification**: Clean production build compiled with `npm run build` (133 modules transformed, 0 errors).

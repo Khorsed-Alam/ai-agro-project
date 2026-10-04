@@ -16,6 +16,8 @@ export interface UserProfile {
   fullName: string;
   email: string;
   role: 'owner' | 'farmer';
+  averageRating?: number;
+  totalRatings?: number;
 }
 
 export interface AuthContextValue {

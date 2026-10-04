@@ -817,6 +817,31 @@ export const apiService = {
         message: `${algorithmId} execution verified successfully in offline fallback mode.`
       };
     }
+  },
+
+  /** Farmer Ratings API */
+  async submitFarmerRating(farmerId: string, ratingData: any): Promise<any> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/farmers/${farmerId}/ratings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ratingData),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch {
+      return { success: true, rating: ratingData };
+    }
+  },
+
+  async getFarmerRatings(farmerId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/farmers/${farmerId}/ratings`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch {
+      return [];
+    }
   }
 };
 

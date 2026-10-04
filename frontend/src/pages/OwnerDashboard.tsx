@@ -4,29 +4,32 @@
  * Complete farm & field management, Mapbox GL JS geometry, farmer assignment, and monitoring feed.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n';
 import type { GeoPolygon, GeoLineString } from '../components/map/AgroMap';
 import { AgroMap } from '../components/map/AgroMap';
-import type { Farm, Field, FarmerProfile, FieldImageRecord, FieldLandData } from '../services/ecosystem';
+import type { Farm, Field, FarmerProfile, FieldImageRecord, FieldLandData, FarmerRating } from '../services/ecosystem';
 import {
   getFarms,
   createFarm,
-  createAssignmentRequest,
   deleteField,
   getOwnerFields,
   createField,
   updateField,
   getRegisteredFarmers,
-  assignFarmerToField,
   getFieldImages,
   getFieldData,
+  submitFarmerRating,
+  getFarmerRatings,
+  getHiredFarmerIdsForOwner,
+  getFieldAssignedWorkers,
+  getOwnerIncomingApplications,
   ECOSYSTEM_UPDATED_EVENT,
   notifyEcosystemChange,
+  freeFarmerFromOwner,
 } from '../services/ecosystem';
-import { evaluateFieldDecision } from '../utils/decisionEngine';
 
 const growthStageTranslationKeys: Record<string, string> = {
   Germination: 'farmerDashboard.growthStages.germination',
@@ -56,7 +59,6 @@ export const OwnerDashboard: React.FC = () => {
   const [showAddFarmModal, setShowAddFarmModal] = useState(false);
   const [showAddFieldWizard, setShowAddFieldWizard] = useState(false);
   const [editingField, setEditingField] = useState<Field | null>(null);
-  const [selectedFieldForAssign, setSelectedFieldForAssign] = useState<Field | null>(null);
   const [fieldToDelete, setFieldToDelete] = useState<Field | null>(null);
   const [isDeletingField, setIsDeletingField] = useState(false);
 
@@ -76,11 +78,32 @@ export const OwnerDashboard: React.FC = () => {
   const [fieldBoundary, setFieldBoundary] = useState<GeoPolygon | null>(null);
   const [fieldPath, setFieldPath] = useState<GeoLineString | null>(null);
 
-  // Assignment Modal & Execution State
-  const [selectedFarmerId, setSelectedFarmerId] = useState<string>('');
-  const [isAssigning, setIsAssigning] = useState<boolean>(false);
-  const [assignError, setAssignError] = useState<string>('');
-  const [assignSuccess, setAssignSuccess] = useState<string>('');
+  // Farmer Rating & Reviews State
+  const [rateModalOpen, setRateModalOpen] = useState(false);
+  const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
+  const [targetFarmerForRate, setTargetFarmerForRate] = useState<FarmerProfile | null>(null);
+  const [targetFarmerForReviews, setTargetFarmerForReviews] = useState<FarmerProfile | null>(null);
+  const [farmerReviews, setFarmerReviews] = useState<FarmerRating[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [ratingScore, setRatingScore] = useState<number>(5);
+  const [ratingHover, setRatingHover] = useState<number>(0);
+  const [ratingFeedback, setRatingFeedback] = useState<string>('');
+  const [ratingFieldId, setRatingFieldId] = useState<string>('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
+  const [ratingModalSuccess, setRatingModalSuccess] = useState<string>('');
+  const [ratingModalError, setRatingModalError] = useState<string>('');
+  const [hiredFarmerIds, setHiredFarmerIds] = useState<Set<string>>(new Set());
+  const [incomingAppsCount, setIncomingAppsCount] = useState<number>(0);
+
+  // Filter only farmers hired by this owner (actively assigned or with approved contracts)
+  const hiredFarmers = useMemo(() => {
+    return farmers.filter((farmer) => {
+      const isAssigned = fields.some((f) =>
+        getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
+      );
+      return isAssigned || hiredFarmerIds.has(farmer.uid);
+    });
+  }, [farmers, fields, hiredFarmerIds]);
 
   const handleDeleteFieldConfirm = async () => {
     if (!fieldToDelete) return;
@@ -92,13 +115,112 @@ export const OwnerDashboard: React.FC = () => {
     loadEcosystemData();
   };
 
-  const openAssignWorkerModal = (f: Field) => {
-    const currentWorkerId = f.assignedFarmerId || (f as any).farmerId || '';
-    setSelectedFarmerId(currentWorkerId);
-    setSelectedFieldForAssign(f);
-    setAssignError('');
-    setAssignSuccess('');
-    setIsAssigning(false);
+  const handleOpenRateModal = (farmer: FarmerProfile, fieldId?: string) => {
+    const isHired =
+      fields.some((f) => getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)) ||
+      hiredFarmerIds.has(farmer.uid);
+    if (!isHired) {
+      alert(t('farmerRating.onlyHiredCanRate', 'Only farm owners who have hired this farmer for work can submit ratings and comments.'));
+      return;
+    }
+    setTargetFarmerForRate(farmer);
+    setRatingScore(5);
+    setRatingHover(0);
+    setRatingFeedback('');
+    setRatingFieldId(fieldId || (fields[0]?.fieldId || ''));
+    setRatingModalSuccess('');
+    setRatingModalError('');
+    setRateModalOpen(true);
+  };
+
+  const [freeingFarmerId, setFreeingFarmerId] = useState<string | null>(null);
+
+  const handleFreeFarmer = async (farmer: FarmerProfile) => {
+    const assignedFieldsList = fields.filter((f) =>
+      getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
+    );
+    const fieldNames = assignedFieldsList.map((f) => f.name).join(', ');
+    const confirmRelease = window.confirm(
+      t(
+        'farmers.freeFarmerConfirm',
+        `Work finished? ${farmer.fullName} will be removed from your fields${fieldNames ? ` (${fieldNames})` : ''} and become available for other owners to hire.`,
+        { farmerName: farmer.fullName, fields: fieldNames }
+      )
+    );
+    if (!confirmRelease) return;
+
+    setFreeingFarmerId(farmer.uid);
+    try {
+      const activeOwnerId = user?.uid || 'owner_demo';
+      const res = await freeFarmerFromOwner(activeOwnerId, farmer.uid, farmer.fullName);
+      if (res.success) {
+        alert(
+          t('farmers.freeFarmerSuccess', `${farmer.fullName} has been freed and is now available for hire.`, {
+            farmerName: farmer.fullName,
+          })
+        );
+        notifyEcosystemChange();
+        await loadEcosystemData();
+      } else {
+        alert(res.error || 'Failed to free farmer');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Error freeing farmer');
+    } finally {
+      setFreeingFarmerId(null);
+    }
+  };
+
+  const handleOpenReviewsModal = async (farmer: FarmerProfile) => {
+    setTargetFarmerForReviews(farmer);
+    setReviewsModalOpen(true);
+    setReviewsLoading(true);
+    try {
+      const list = await getFarmerRatings(farmer.uid);
+      setFarmerReviews(list);
+    } catch {
+      setFarmerReviews([]);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  const handleSubmitRating = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetFarmerForRate) return;
+    if (!ratingFeedback.trim()) {
+      setRatingModalError(t('farmerRating.commentRequired', 'Please provide a written comment about your experience with this farmer.'));
+      return;
+    }
+
+    setIsSubmittingRating(true);
+    setRatingModalError('');
+    const relatedField = fields.find((f) => f.fieldId === ratingFieldId || (f as any).id === ratingFieldId);
+    
+    const res = await submitFarmerRating({
+      farmerId: targetFarmerForRate.uid,
+      farmerName: targetFarmerForRate.fullName,
+      ownerId: user?.uid || 'owner_demo',
+      ownerName: userProfile?.fullName || farms[0]?.name || 'Farm Owner',
+      rating: ratingScore,
+      feedback: ratingFeedback.trim(),
+      fieldId: ratingFieldId || undefined,
+      fieldName: relatedField ? relatedField.name : undefined,
+    });
+
+    setIsSubmittingRating(false);
+    if (!res.success) {
+      setRatingModalError(res.error || 'Failed to submit rating.');
+      return;
+    }
+
+    setRatingModalSuccess(t('farmerRating.ratingSuccess', 'Rating and comment submitted successfully!'));
+    loadEcosystemData();
+    setTimeout(() => {
+      setRateModalOpen(false);
+      setRatingModalSuccess('');
+      setRatingModalError('');
+    }, 1200);
   };
 
   const loadEcosystemData = async () => {
@@ -110,6 +232,14 @@ export const OwnerDashboard: React.FC = () => {
       setFarms(farmList);
       setFields(fieldList);
       setFarmers(farmerList);
+
+      // Load hired farmer IDs for the active owner
+      const hiredList = await getHiredFarmerIdsForOwner(user?.uid || 'owner_demo');
+      setHiredFarmerIds(new Set(hiredList));
+
+      // Load pending specialist work applications for this owner
+      const incomingApps = await getOwnerIncomingApplications(user?.uid || 'owner_demo');
+      setIncomingAppsCount(incomingApps.length);
 
       // Select first field by default for detailed inspection if none selected
       if (fieldList.length > 0) {
@@ -170,12 +300,12 @@ export const OwnerDashboard: React.FC = () => {
   // Open Edit Wizard
   const openEditFieldWizard = (f: Field) => {
     setEditingField(f);
-    setFieldName(f.name);
-    setFieldCrop(f.crop);
-    setFieldSoil(f.soilType);
-    setFieldArea(f.areaAcres.toString());
-    setFieldLat(f.latitude);
-    setFieldLng(f.longitude);
+    setFieldName(f.name || '');
+    setFieldCrop(f.crop || 'Rice');
+    setFieldSoil(f.soilType || 'Salinas Silty Loam');
+    setFieldArea(f.areaAcres !== undefined && f.areaAcres !== null ? f.areaAcres.toString() : '10');
+    setFieldLat(typeof f.latitude === 'number' && Number.isFinite(f.latitude) ? f.latitude : 36.677);
+    setFieldLng(typeof f.longitude === 'number' && Number.isFinite(f.longitude) ? f.longitude : -121.655);
     setFieldBoundary(f.boundary || null);
     setFieldPath(f.path || null);
     setShowAddFieldWizard(true);
@@ -219,91 +349,6 @@ export const OwnerDashboard: React.FC = () => {
     setFieldPath(null);
     notifyEcosystemChange();
     loadEcosystemData();
-  };
-
-  // Handle Assign / Unassign Farmer
-  const handleAssignFarmer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedFieldForAssign) {
-      setAssignError(t('validation.noFieldSelected'));
-      return;
-    }
-
-    const targetId = (selectedFieldForAssign as any).docId || selectedFieldForAssign.fieldId || (selectedFieldForAssign as any).id;
-    if (!targetId) {
-      setAssignError(t('validation.fieldIdMissing'));
-      return;
-    }
-
-    // Validation: check if a worker selection was made
-    if (!selectedFarmerId && selectedFarmerId !== '__unassign__') {
-      setAssignError(t('validation.selectWorker'));
-      return;
-    }
-
-    setIsAssigning(true);
-    setAssignError('');
-    setAssignSuccess('');
-
-    try {
-      const isUnassigning = selectedFarmerId === '__unassign__';
-      const workerId = isUnassigning ? null : selectedFarmerId;
-      const farmer = isUnassigning ? null : farmers.find((f) => f.uid === selectedFarmerId);
-      const workerName = farmer ? farmer.fullName : null;
-
-      if (isUnassigning) {
-        const success = await assignFarmerToField(targetId, null, null, user?.uid || 'owner_demo');
-        if (success) {
-          setAssignSuccess(t('ownerDashboard.unassignedFromField', 'Unassigned worker from field {name}.', { name: selectedFieldForAssign.name }));
-          notifyEcosystemChange();
-          await loadEcosystemData();
-          setTimeout(() => {
-            setIsAssigning(false);
-            setAssignSuccess('');
-            setSelectedFieldForAssign(null);
-          }, 1000);
-        }
-        return;
-      }
-
-      // Owner sends an assignment request (Status = Pending until farmer approves/rejects)
-      const farmObj = farms.find((fm) => fm.farmId === selectedFieldForAssign.farmId) || farms[0];
-      const res = await createAssignmentRequest({
-        ownerId: user?.uid || 'owner_demo',
-        ownerName: userProfile?.fullName || 'Farm Owner',
-        farmerId: workerId!,
-        farmerName: workerName || 'Farmer',
-        farmId: selectedFieldForAssign.farmId || (farmObj?.farmId || 'farm_salinas_01'),
-        farmName: farmObj?.name || 'Green Valley Farm',
-        fieldId: targetId,
-        fieldName: selectedFieldForAssign.name,
-      });
-
-      if (res.success) {
-        setAssignSuccess(t('ownerDashboard.assignmentRequestSent', 'Assignment request sent to {name}! Status is Pending until the farmer approves.', { name: workerName || '' }));
-        notifyEcosystemChange();
-        await loadEcosystemData();
-        setTimeout(() => {
-          setIsAssigning(false);
-          setAssignSuccess('');
-          setSelectedFieldForAssign(null);
-        }, 1500);
-      } else {
-        setIsAssigning(false);
-        setAssignError(t('errors.sendAssignment'));
-      }
-    } catch (err: any) {
-      setIsAssigning(false);
-      console.error('Assign worker exception:', err);
-      setAssignError(t('errors.assignWorker'));
-    }
-  };
-
-  const handleUnassignDirect = async (f: Field) => {
-    const targetId = (f as any).docId || f.fieldId || (f as any).id;
-    await assignFarmerToField(targetId, null, null, user?.uid || 'owner_demo');
-    notifyEcosystemChange();
-    await loadEcosystemData();
   };
 
   return (
@@ -351,6 +396,41 @@ export const OwnerDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Incoming Specialist Applications Banner */}
+      {incomingAppsCount > 0 && (
+        <div className="p-space-md rounded-2xl bg-gradient-to-r from-primary/10 via-secondary/10 to-primary/5 border border-primary/30 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 shadow-sm">
+              <span className="material-symbols-outlined text-[20px]">assignment_ind</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-headline-sm text-body-md font-bold text-on-surface">
+                  {t('farmers.incomingApplicationsTitle', 'Incoming Specialist Applications')}
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-primary text-on-primary text-[11px] font-bold">
+                  {incomingAppsCount}
+                </span>
+              </div>
+              <p className="text-body-sm text-on-surface-variant">
+                {t(
+                  'farmers.incomingApplicationsDesc',
+                  'Specialists have applied to work on your farm fields. Review their rates and approve assignments.'
+                )}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/farmers?tab=assignments')}
+            className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold hover:opacity-95 transition-all shadow-sm flex items-center gap-1.5 shrink-0 cursor-pointer"
+          >
+            <span>{t('farmers.reviewApplications', 'Review & Assign Farmers')}</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        </div>
+      )}
+
       {/* Metric Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-gutter">
         <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm border border-outline-variant/30 flex items-center gap-space-md">
@@ -383,14 +463,14 @@ export const OwnerDashboard: React.FC = () => {
 
         <div className="bg-surface-container-lowest p-space-md rounded-xl shadow-sm border border-outline-variant/30 flex items-center gap-space-md">
           <div className="w-12 h-12 rounded-xl bg-tertiary-container text-on-tertiary-container flex items-center justify-center font-headline-md">
-            <span className="material-symbols-outlined text-[26px]">group</span>
+            <span className="material-symbols-outlined text-[26px]">badge</span>
           </div>
           <div className="flex flex-col">
             <span className="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider font-semibold">
-              {t('ownerDashboard.registeredFarmers', 'Registered Farmers')}
+              {t('ownerDashboard.hiredFarmers', 'Hired Farmers')}
             </span>
             <span className="font-display-md text-display-md text-on-surface font-bold">
-              {formatNumber(farmers.length)}
+              {formatNumber(hiredFarmers.length)}
             </span>
           </div>
         </div>
@@ -412,7 +492,7 @@ export const OwnerDashboard: React.FC = () => {
 
       {/* Interactive Mapbox GIS View */}
       <section className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 flex flex-col gap-space-md">
-        <div className="flex items-center justify-between pb-space-sm border-b border-outline-variant/20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-space-sm border-b border-outline-variant/20 gap-space-sm">
           <div className="flex items-center gap-space-xs">
             <span className="material-symbols-outlined text-secondary text-[22px]">map</span>
             <h2 className="font-headline-md text-headline-md text-on-surface">
@@ -421,216 +501,231 @@ export const OwnerDashboard: React.FC = () => {
               })}
             </h2>
           </div>
-          <span className="font-data-mono text-xs text-secondary bg-surface-container px-2.5 py-1 rounded-md">
-            {t('ownerDashboard.mapboxEnabled', 'Mapbox GL JS Enabled')}
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            {fields.length > 0 && (
+              <div className="flex items-center gap-1.5 bg-surface px-2.5 py-1 rounded-lg border border-outline-variant/40 text-xs">
+                <span className="text-on-surface-variant font-medium">{t('fields.title', 'Field')}:</span>
+                <select
+                  value={selectedFieldForDetail?.fieldId || (selectedFieldForDetail as any)?.id || ''}
+                  onChange={(e) => {
+                    const target = fields.find((f) => f.fieldId === e.target.value || (f as any).id === e.target.value);
+                    if (target) {
+                      setSelectedFieldForDetail(target);
+                      loadFieldTelemetry(target.fieldId || (target as any).id);
+                    }
+                  }}
+                  className="bg-transparent font-semibold text-on-surface focus:outline-none cursor-pointer"
+                >
+                  {fields.map((f) => (
+                    <option key={f.fieldId || (f as any).id} value={f.fieldId || (f as any).id}>
+                      {f.name} ({f.crop})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => navigate('/farmers?tab=assignments')}
+              className="h-8 px-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+              title={t('ownerDashboard.fieldAssignments', 'Field Parcels & Worker Assignments')}
+            >
+              <span className="material-symbols-outlined text-[16px]">assignment_ind</span>
+              <span>{t('ownerDashboard.fieldAssignments', 'Field Parcels & Worker Assignments')}</span>
+            </button>
+            <span className="font-data-mono text-xs text-secondary bg-surface-container px-2.5 py-1 rounded-md">
+              {t('ownerDashboard.mapboxEnabled', 'Mapbox GL JS Enabled')}
+            </span>
+          </div>
         </div>
 
         <AgroMap
           initialCenter={
-            selectedFieldForDetail
+            selectedFieldForDetail &&
+            Number.isFinite(selectedFieldForDetail.longitude) &&
+            Number.isFinite(selectedFieldForDetail.latitude)
               ? [selectedFieldForDetail.longitude, selectedFieldForDetail.latitude]
               : [-121.655, 36.677]
           }
           initialZoom={14}
-          boundary={selectedFieldForDetail?.boundary}
-          path={selectedFieldForDetail?.path}
+          boundary={selectedFieldForDetail?.boundary || null}
+          path={selectedFieldForDetail?.path || null}
+          readOnly={true}
           fieldTitle={selectedFieldForDetail?.name || t('ownerDashboard.defaultMapFieldTitle', 'Salinas Valley Farm Sector')}
           height="450px"
         />
       </section>
 
-      {/* Main Grid: Fields & Detailed Monitoring Drawer */}
+      {/* Main Grid: Farmers Directory & Field Telemetry Drawer */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter-lg items-start">
-        {/* Fields List (Left 7 Cols) */}
+        {/* Left Column (Left 7 Cols) */}
         <div className="lg:col-span-7 flex flex-col gap-space-md">
-          <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 flex flex-col gap-space-md">
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <h3 className="font-headline-md text-headline-md text-on-surface">{t('ownerDashboard.fieldAssignments', 'Field Parcels & Worker Assignments')}</h3>
-              <span className="text-xs font-semibold text-secondary">{t('common.fields', { count: formatNumber(fields.length) })}</span>
+          {/* Quick link banner to Farmers workforce page where assignments reside */}
+          <div className="bg-primary/5 border border-primary/20 p-space-md rounded-xl flex items-center justify-between gap-space-md">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary-container text-on-primary flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[22px]">assignment_ind</span>
+              </div>
+              <div className="min-w-0">
+                <h4 className="font-headline-sm text-sm text-primary font-semibold truncate">
+                  {t('ownerDashboard.fieldAssignments', 'Field Parcels & Worker Assignments')}
+                </h4>
+                <p className="text-xs text-on-surface-variant line-clamp-1">
+                  Field parcels and worker assignments are now managed under the Farmers section.
+                </p>
+              </div>
             </div>
-
-            <div className="flex flex-col space-y-3">
-              {fields.length === 0 ? (
-                <div className="p-8 text-center text-on-surface-variant font-body-sm">
-                  {t('ownerDashboard.noFieldParcels', 'No field parcels found in database. Click "+ Add Field Parcel" above to create your first field.')}
-                </div>
-              ) : (
-                fields.map((f) => {
-                const fieldDec = evaluateFieldDecision(f);
-                const isSelected = selectedFieldForDetail?.fieldId === f.fieldId;
-                const isCrit = fieldDec.status === 'Critical';
-                const isAtt = fieldDec.status === 'Attention';
-                return (
-                  <div
-                    key={f.fieldId || f.id || (f as any).docId || f.name}
-                    onClick={() => {
-                      setSelectedFieldForDetail(f);
-                      loadFieldTelemetry(f.fieldId);
-                    }}
-                    className={`bg-surface p-space-md rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-space-md shadow-xs ${
-                      isSelected
-                        ? 'border-primary ring-2 ring-primary/20 bg-primary-container/10'
-                        : 'border-outline-variant/30 hover:border-outline-variant'
-                    }`}
-                  >
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-headline-sm text-headline-sm text-on-surface font-semibold">{f.name}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                            isCrit
-                              ? 'bg-error-container text-on-error-container'
-                              : isAtt
-                              ? 'bg-surface-container-high text-on-surface'
-                              : fieldDec.status === 'Insufficient Data'
-                              ? 'bg-surface-container text-on-surface-variant'
-                              : 'bg-primary-container text-on-primary'
-                          }`}
-                        >
-                          {translateEnum('status', fieldDec.status, fieldDec.status)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-on-surface-variant font-body-sm">
-                        <span>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', f.crop, f.crop)}</strong></span>
-                        <span>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(f.areaAcres)} {t('farm.acres')}</strong></span>
-                        <span>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', f.soilType, f.soilType)}</strong></span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-1.5 text-xs text-secondary font-semibold">
-                        <span className="material-symbols-outlined text-[16px]">account_box</span>
-                        <span>
-                          {t('fields.assignedFarmer')}: {f.assignedFarmerName || (f as any).farmerName || translateEnum('common.enums.assignmentStatuses', 'unassigned')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEditFieldWizard(f);
-                        }}
-                        className="h-8 px-2.5 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1"
-                        title={t('ownerDashboard.editFieldDetails', 'Edit Field Boundaries & Details')}
-                        aria-label={t('ownerDashboard.editFieldDetails', 'Edit Field Boundaries & Details')}
-                      >
-                        <span className="material-symbols-outlined text-[15px]">edit</span>
-                        <span>{t('common.edit')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFieldToDelete(f);
-                        }}
-                        className="h-8 px-2 rounded-lg bg-error-container text-on-error-container text-xs font-semibold hover:bg-error-container/80 transition-colors flex items-center gap-1 cursor-pointer"
-                        title={t('ownerDashboard.removeFieldParcel', 'Remove Field Parcel')}
-                        aria-label={t('ownerDashboard.removeFieldParcel', 'Remove Field Parcel')}
-                      >
-                        <span className="material-symbols-outlined text-[15px]">delete</span>
-                      </button>
-
-                      {f.assignedFarmerId || (f as any).farmerId ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAssignWorkerModal(f);
-                            }}
-                            className="h-8 px-2.5 rounded-lg bg-surface-container-highest text-on-surface text-xs font-semibold hover:bg-primary hover:text-on-primary transition-colors flex items-center gap-1 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-[15px]">swap_horiz</span>
-                            <span>{t('ownerDashboard.reassign', 'Reassign')}</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUnassignDirect(f);
-                            }}
-                            className="h-8 px-2 rounded-lg bg-error-container text-on-error-container text-xs font-semibold hover:bg-error-container/80 transition-colors flex items-center gap-1 cursor-pointer"
-                            title={t('ownerDashboard.unassignWorker', 'Unassign Worker')}
-                            aria-label={t('ownerDashboard.unassignWorker', 'Unassign Worker')}
-                          >
-                            <span className="material-symbols-outlined text-[15px]">person_remove</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openAssignWorkerModal(f);
-                          }}
-                          className="h-8 px-3 rounded-lg bg-primary text-on-primary font-headline-sm text-xs hover:bg-primary-container transition-colors flex items-center gap-1 cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[15px]">person_add</span>
-                          <span>{t('ownerDashboard.assignWorker', 'Assign Worker')}</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              }))}
-            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/farmers?tab=assignments')}
+              className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1 shrink-0"
+            >
+              <span>Manage</span>
+              <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+            </button>
           </div>
 
-          {/* Registered Farmers Directory */}
+          {/* Hired Farmers & Specialists Directory */}
           <div className="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm border border-outline-variant/30 flex flex-col gap-space-md">
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <h3 className="font-headline-md text-headline-md text-on-surface">{t('ownerDashboard.registeredFarmersDirectory', 'Registered Farmers Directory')}</h3>
-              <span className="text-xs text-on-surface-variant">{t('ownerDashboard.registeredCount', '{count} Registered', { count: formatNumber(farmers.length) })}</span>
+            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[22px]">badge</span>
+                <h3 className="font-headline-md text-headline-md text-on-surface">
+                  {t('ownerDashboard.hiredFarmersDirectory', 'Hired Farmers & Specialists')}
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-on-surface-variant font-medium px-2.5 py-0.5 rounded-full bg-surface-container">
+                  {t('ownerDashboard.hiredCount', '{count} Hired', { count: formatNumber(hiredFarmers.length) })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/farmers?tab=directory')}
+                  className="text-xs text-primary hover:underline font-semibold flex items-center gap-0.5 cursor-pointer ml-1"
+                  title={t('ownerDashboard.browseAllFarmers', 'Browse All Farmers')}
+                >
+                  <span>{t('ownerDashboard.browseAllFarmers', 'Browse All')}</span>
+                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-col space-y-2.5">
-              {farmers.map((farmer) => {
-                const assignedFieldObj = fields.find((f) => f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid);
-                const isAssigned = Boolean(assignedFieldObj);
-                return (
-                  <div
-                    key={farmer.uid}
-                    className="bg-surface p-space-sm px-space-md rounded-lg border border-outline-variant/20 flex items-center justify-between gap-2"
-                  >
-                    <div className="flex items-center gap-space-sm min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shrink-0">
-                        {farmer.fullName.charAt(0)}
+            {hiredFarmers.length === 0 ? (
+              <div className="py-8 px-4 text-center flex flex-col items-center justify-center gap-3 bg-surface rounded-xl border border-outline-variant/20">
+                <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[24px]">group_off</span>
+                </div>
+                <div className="flex flex-col gap-1 max-w-sm">
+                  <h4 className="font-semibold text-sm text-on-surface">
+                    {t('ownerDashboard.noHiredFarmersTitle', 'No Hired Farmers Yet')}
+                  </h4>
+                  <p className="text-xs text-on-surface-variant">
+                    {t('ownerDashboard.noHiredFarmers', 'You haven\'t hired any farmers for your fields yet. Browse available registered farmers to send work proposals or assign directly.')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/farmers?tab=directory')}
+                  className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">person_search</span>
+                  <span>{t('ownerDashboard.browseAllFarmers', 'Browse Farmers Directory')}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col space-y-2.5">
+                {hiredFarmers.map((farmer) => {
+                  const assignedFieldsList = fields.filter((f) =>
+                    getFieldAssignedWorkers(f).some((w) => w.farmerId === farmer.uid)
+                  );
+                  const isAssigned = assignedFieldsList.length > 0;
+                  return (
+                    <div
+                      key={farmer.uid}
+                      className="bg-surface p-space-sm px-space-md rounded-lg border border-outline-variant/20 flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-space-sm min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-xs shrink-0">
+                          {(farmer.fullName || 'Farmer').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-headline-sm text-xs font-semibold text-on-surface truncate">{farmer.fullName || 'Farmer Worker'}</span>
+                          <span className="font-body-sm text-[11px] text-on-surface-variant truncate">{farmer.email}</span>
+                        </div>
                       </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-headline-sm text-xs font-semibold text-on-surface truncate">{farmer.fullName}</span>
-                        <span className="font-body-sm text-[11px] text-on-surface-variant truncate">{farmer.email}</span>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Rating Badge */}
+                        {farmer.totalRatings && farmer.totalRatings > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReviewsModal(farmer)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/25 text-xs font-bold hover:bg-amber-500/20 transition-all cursor-pointer shadow-2xs"
+                            title={t('farmerRating.viewReviews')}
+                          >
+                            <span className="text-amber-500 text-sm leading-none">★</span>
+                            <span>{typeof farmer.averageRating === 'number' ? farmer.averageRating.toFixed(1) : '5.0'}</span>
+                            <span className="text-[10px] text-on-surface-variant font-normal">({farmer.totalRatings})</span>
+                          </button>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[11px] font-medium">
+                            {t('farmerRating.newWorker')}
+                          </span>
+                        )}
+
+                        <span
+                          className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                            isAssigned
+                              ? 'bg-secondary-container text-on-secondary-container border border-secondary'
+                              : 'bg-primary-container/30 text-primary border border-primary/20'
+                          }`}
+                        >
+                          {isAssigned
+                            ? t('ownerDashboard.assignedToField', 'Assigned to {field}', { field: assignedFieldsList.map((f) => f.name).join(', ') })
+                            : t('farmerRating.verifiedEmployer', 'Hired Specialist')}
+                        </span>
+
+                        {/* Rate Worker Button (Always active since they are hired) */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRateModal(farmer, assignedFieldsList[0]?.fieldId)}
+                          className="h-8 px-2.5 rounded-lg bg-primary-container text-on-primary-container text-xs font-semibold hover:bg-primary hover:text-on-primary transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                          title={t('farmerRating.rateWorker', 'Rate & Comment on Farmer')}
+                          aria-label={t('farmerRating.rateWorker', 'Rate & Comment on Farmer')}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">rate_review</span>
+                          <span>{t('farmerRating.rateFarmer', 'Rate & Comment')}</span>
+                        </button>
+
+                        {/* Finish Work & Free Farmer Button */}
+                        <button
+                          type="button"
+                          disabled={freeingFarmerId === farmer.uid}
+                          onClick={() => handleFreeFarmer(farmer)}
+                          className="h-8 px-2.5 rounded-lg bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-600/30 text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          title={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                          aria-label={t('farmers.freeFarmer', 'Finish Work & Free Farmer')}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">task_alt</span>
+                          <span>{t('farmers.freeFarmerBtn', 'Finish & Free')}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/messages?user=${farmer.uid}`)}
+                          className="h-8 px-2.5 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1 cursor-pointer"
+                          title={t('ownerDashboard.chatWithFarmer', '1-to-1 Chat with Farmer')}
+                          aria-label={t('ownerDashboard.chatWithFarmer', '1-to-1 Chat with Farmer')}
+                        >
+                          <span className="material-symbols-outlined text-[15px]">chat</span>
+                          <span>{t('ownerDashboard.chat', 'Chat')}</span>
+                        </button>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                          isAssigned
-                            ? 'bg-secondary-container text-on-secondary-container border border-secondary'
-                            : 'bg-primary-fixed text-on-primary-fixed border border-primary-fixed-dim'
-                        }`}
-                      >
-                        {isAssigned
-                          ? t('ownerDashboard.assignedToField', 'Assigned to {field}', { field: assignedFieldObj?.name || '' })
-                          : t('status.available')}
-                      </span>
-
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/messages?user=${farmer.uid}`)}
-                        className="h-8 px-2.5 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors flex items-center gap-1 cursor-pointer"
-                        title={t('ownerDashboard.chatWithFarmer', '1-to-1 Chat with Farmer')}
-                        aria-label={t('ownerDashboard.chatWithFarmer', '1-to-1 Chat with Farmer')}
-                      >
-                        <span className="material-symbols-outlined text-[15px]">chat</span>
-                        <span>{t('ownerDashboard.chat', 'Chat')}</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -660,9 +755,9 @@ export const OwnerDashboard: React.FC = () => {
               {/* Quick Field Summary */}
               <div className="grid grid-cols-2 gap-2 bg-surface p-3 rounded-lg border border-outline-variant/20 text-xs">
                 <div>{t('fields.crop')}: <strong className="text-on-surface">{translateEnum('common.enums.crops', selectedFieldForDetail.crop, selectedFieldForDetail.crop)}</strong></div>
-                <div>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(selectedFieldForDetail.areaAcres)} {t('farm.acres')}</strong></div>
+                <div>{t('fields.area')}: <strong className="text-on-surface">{formatNumber(selectedFieldForDetail.areaAcres ?? 0)} {t('farm.acres')}</strong></div>
                 <div>{t('fields.soilType')}: <strong className="text-on-surface">{translateEnum('common.enums.soilTypes', selectedFieldForDetail.soilType, selectedFieldForDetail.soilType)}</strong></div>
-                <div>{t('farm.worker')}: <strong className="text-on-surface">{selectedFieldForDetail.assignedFarmerName || (selectedFieldForDetail as any).farmerName || t('status.none')}</strong></div>
+                <div>{t('farm.worker')}: <strong className="text-on-surface">{getFieldAssignedWorkers(selectedFieldForDetail).length > 0 ? getFieldAssignedWorkers(selectedFieldForDetail).map((w) => w.farmerName).join(', ') : t('status.none')}</strong></div>
               </div>
 
               {/* Latest Submissions Feed */}
@@ -695,7 +790,7 @@ export const OwnerDashboard: React.FC = () => {
                           <div>{t('ownerDashboard.potassium', 'K')}: <strong>{sub.potassium !== undefined && sub.potassium !== null ? formatNumber(sub.potassium, { maximumFractionDigits: 2 }) : t('common.notAvailable')}</strong></div>
                         </div>
                         <div className="text-on-surface-variant text-[11px]">
-                          {t('farmerDashboard.growthStage', 'Stage')}: <strong className="text-on-surface">{translateGrowthStage(sub.cropGrowthStage)}</strong>
+                          {t('farmerDashboard.growthStage', 'Stage')}: <strong className="text-on-surface">{translateGrowthStage(sub.cropGrowthStage || '')}</strong>
                         </div>
                         {sub.notes && (
                           <p className="italic text-on-surface-variant text-[11px] bg-surface-container/30 p-1.5 rounded">
@@ -897,7 +992,10 @@ export const OwnerDashboard: React.FC = () => {
                   <span className="text-[11px] text-secondary font-data-mono">{t('ownerDashboard.mapboxDrawActive', 'Mapbox GL Draw Active')}</span>
                 </label>
                 <AgroMap
-                  initialCenter={[fieldLng, fieldLat]}
+                  initialCenter={[
+                    Number.isFinite(fieldLng) ? fieldLng : -121.655,
+                    Number.isFinite(fieldLat) ? fieldLat : 36.677
+                  ]}
                   initialZoom={14}
                   boundary={fieldBoundary}
                   path={fieldPath}
@@ -936,154 +1034,7 @@ export const OwnerDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Assign Worker Modal */}
-      {selectedFieldForAssign && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-surface-container-lowest w-full max-w-lg p-space-lg rounded-xl shadow-2xl flex flex-col gap-space-md border border-outline-variant/30 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <div className="flex flex-col">
-                <span className="text-[11px] font-semibold text-secondary uppercase tracking-wider">{t('ownerDashboard.fieldParcelAssignment', 'Field Parcel Assignment')}</span>
-                <h3 className="font-headline-md text-headline-md text-on-surface">
-                  {t('ownerDashboard.assignWorkerToField', 'Assign Worker: {field}', { field: selectedFieldForAssign.name })}
-                </h3>
-              </div>
-              <button
-                type="button"
-                disabled={isAssigning}
-                onClick={() => setSelectedFieldForAssign(null)}
-                className="text-on-surface-variant hover:text-on-surface p-1 rounded-lg hover:bg-surface-container transition-colors"
-                aria-label={t('accessibility.closeDialog')}
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* Error Banner */}
-            {assignError && (
-              <div className="p-3 bg-error-container border border-error rounded-lg text-on-error-container text-xs font-semibold flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">error</span>
-                <span>{assignError}</span>
-              </div>
-            )}
-
-            {/* Success Banner */}
-            {assignSuccess && (
-              <div className="p-3 bg-primary-container text-on-primary rounded-lg text-xs font-semibold flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                <span>{assignSuccess}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleAssignFarmer} className="flex flex-col gap-space-md">
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-on-surface flex items-center justify-between">
-                  <span>{t('ownerDashboard.selectWorker', 'Select Worker')}</span>
-                  <span className="text-[11px] text-on-surface-variant font-normal">{t('ownerDashboard.chooseRegisteredWorker', 'Choose a registered field worker')}</span>
-                </label>
-
-                {farmers.length === 0 ? (
-                  <div className="p-4 bg-surface rounded-lg border border-outline-variant/30 text-center text-xs text-on-surface-variant">
-                    {t('ownerDashboard.noRegisteredWorkers', 'No registered farmers/workers found in database.')}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2 max-h-[260px] overflow-y-auto pr-1">
-                    {farmers.map((farmer) => {
-                      const isSelected = selectedFarmerId === farmer.uid;
-                      const assignedCount = fields.filter((f) => f.assignedFarmerId === farmer.uid || (f as any).farmerId === farmer.uid).length;
-                      return (
-                        <div
-                          key={farmer.uid}
-                          onClick={() => {
-                            if (!isAssigning) setSelectedFarmerId(farmer.uid);
-                          }}
-                          className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                            isSelected
-                              ? 'border-primary ring-2 ring-primary/20 bg-primary-container/15'
-                              : 'border-outline-variant/30 bg-surface hover:border-outline-variant'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="radio"
-                              name="workerSelection"
-                              checked={isSelected}
-                              onChange={() => setSelectedFarmerId(farmer.uid)}
-                              disabled={isAssigning}
-                              className="accent-primary w-4 h-4 cursor-pointer"
-                            />
-                            <div className="w-8 h-8 rounded-full bg-primary-container text-on-primary font-bold text-xs flex items-center justify-center">
-                              {farmer.fullName.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-xs text-on-surface">{farmer.fullName}</span>
-                              <span className="text-[11px] text-on-surface-variant">{farmer.email}</span>
-                            </div>
-                          </div>
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-surface-container text-secondary">
-                            {t('common.fields', { count: formatNumber(assignedCount) })}
-                          </span>
-                        </div>
-                      );
-                    })}
-
-                    {/* Unassign Option */}
-                    <div
-                      onClick={() => {
-                        if (!isAssigning) setSelectedFarmerId('__unassign__');
-                      }}
-                      className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                        selectedFarmerId === '__unassign__'
-                          ? 'border-error ring-2 ring-error/20 bg-error-container'
-                          : 'border-outline-variant/20 bg-surface hover:border-outline-variant'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="radio"
-                          name="workerSelection"
-                          checked={selectedFarmerId === '__unassign__'}
-                          onChange={() => setSelectedFarmerId('__unassign__')}
-                          disabled={isAssigning}
-                          className="accent-error w-4 h-4 cursor-pointer"
-                        />
-                        <span className="text-xs font-medium text-on-error-container">{t('ownerDashboard.unassignCurrentWorker', '-- Unassign Current Worker --')}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-end gap-space-sm pt-space-xs border-t border-outline-variant/20">
-                <button
-                  type="button"
-                  disabled={isAssigning}
-                  onClick={() => setSelectedFieldForAssign(null)}
-                  className="px-4 py-2 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors disabled:opacity-50"
-                >
-                  {t('common.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isAssigning}
-                  className="px-5 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
-                >
-                  {isAssigning ? (
-                    <>
-                      <span className="w-3.5 h-3.5 rounded-full border-2 border-on-primary border-t-transparent animate-spin inline-block" />
-                      <span>{t('common.saving')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[16px]">check</span>
-                      <span>{t('ownerDashboard.assignWorker', 'Assign Worker')}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Delete Field Confirmation Modal (Section 7) */}
       {fieldToDelete && (
@@ -1105,7 +1056,7 @@ export const OwnerDashboard: React.FC = () => {
             </div>
 
             <p className="text-sm text-on-surface-variant leading-relaxed">
-              {t('validation.removeFieldConfirm', { name: fieldToDelete.name })}
+              {t('validation.removeFieldConfirm', { name: fieldToDelete?.name || '' })}
             </p>
             <p className="text-xs text-on-surface-variant bg-surface p-3 rounded-lg border border-outline-variant/20">
               {t('ownerDashboard.fieldRemovalWarning', 'This field will be deleted from your farm database. Any active worker assignment will be cleared.')}
@@ -1127,6 +1078,276 @@ export const OwnerDashboard: React.FC = () => {
               >
                 <span className="material-symbols-outlined text-[16px]">delete</span>
                 <span>{isDeletingField ? t('common.loading') : t('ownerDashboard.removeField', 'Remove Field')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rate Farmer Modal */}
+      {rateModalOpen && targetFarmerForRate && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-surface-container-lowest w-full max-w-md p-space-lg rounded-xl shadow-2xl flex flex-col gap-space-md border border-outline-variant/30 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[24px] text-amber-500">hotel_class</span>
+                <div className="flex flex-col">
+                  <h3 className="font-headline-md text-headline-md font-bold text-on-surface">
+                    {t('farmerRating.rateTitle', 'Rate & Review Farmer')}
+                  </h3>
+                  <span className="text-xs text-on-surface-variant font-medium">
+                    {targetFarmerForRate.fullName} ({targetFarmerForRate.email})
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRateModalOpen(false)}
+                className="text-on-surface-variant hover:text-on-surface text-lg cursor-pointer"
+                aria-label={t('accessibility.closeDialog')}
+              >
+                ✕
+              </button>
+            </div>
+
+            {ratingModalSuccess && (
+              <div className="p-3 bg-secondary-container text-on-secondary-container rounded-lg text-xs font-semibold flex items-center gap-2 border border-secondary/30">
+                <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                <span>{ratingModalSuccess}</span>
+              </div>
+            )}
+
+            {ratingModalError && (
+              <div className="p-3 bg-error-container text-error rounded-lg text-xs font-semibold flex items-center gap-2 border border-error/30">
+                <span className="material-symbols-outlined text-[18px]">error</span>
+                <span>{ratingModalError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitRating} className="flex flex-col gap-space-md">
+              {/* Star Rating Selector */}
+              <div className="flex flex-col gap-1.5 items-center text-center">
+                <label className="text-xs font-semibold text-on-surface">
+                  {t('farmerRating.selectScore', 'Select Rating Score')}
+                </label>
+                <div className="flex items-center gap-1 justify-center py-2 px-4 bg-surface rounded-xl border border-outline-variant/20 w-full">
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const filled = (ratingHover || ratingScore) >= star;
+                    return (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setRatingScore(star)}
+                        onMouseEnter={() => setRatingHover(star)}
+                        onMouseLeave={() => setRatingHover(0)}
+                        className="p-1 text-3xl transition-transform hover:scale-125 cursor-pointer leading-none"
+                        aria-label={`${star} Stars`}
+                      >
+                        <span className={filled ? 'text-amber-500' : 'text-outline-variant/40'}>★</span>
+                      </button>
+                    );
+                  })}
+                  <span className="ml-3 font-bold text-sm text-on-surface">
+                    {ratingScore} / 5
+                  </span>
+                </div>
+              </div>
+
+              {/* Related Field Parcel */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-on-surface">
+                  {t('farmerRating.associatedField', 'Associated Field Parcel')}
+                </label>
+                <select
+                  value={ratingFieldId}
+                  onChange={(e) => setRatingFieldId(e.target.value)}
+                  className="w-full bg-surface h-9 px-3 rounded-lg text-xs border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">{t('farmerRating.generalFarmWork', 'General Farm Work / All Fields')}</option>
+                  {fields.map((f) => (
+                    <option key={f.fieldId || (f as any).id} value={f.fieldId || (f as any).id}>
+                      {f.name} ({f.crop})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Written Feedback & Comment */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-on-surface">
+                  {t('farmerRating.commentLabel', 'Written Comment & Performance Review')} *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={ratingFeedback}
+                  onChange={(e) => setRatingFeedback(e.target.value)}
+                  placeholder={t('farmerRating.commentPlaceholder', 'Write your comment and performance review (e.g. communication, crop care, irrigation execution, work quality)...')}
+                  className="w-full bg-surface p-2.5 rounded-lg text-xs border border-outline-variant/40 focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-space-sm pt-space-xs border-t border-outline-variant/20">
+                <button
+                  type="button"
+                  disabled={isSubmittingRating}
+                  onClick={() => setRateModalOpen(false)}
+                  className="px-4 py-2 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingRating}
+                  className="px-5 py-2 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {isSubmittingRating ? (
+                    <>
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-on-primary border-t-transparent animate-spin inline-block" />
+                      <span>{t('farmerRating.submittingRating', 'Submitting...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check</span>
+                      <span>{t('farmerRating.submitRating', 'Submit Rating')}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Farmer Reviews & Reputation Modal */}
+      {reviewsModalOpen && targetFarmerForReviews && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-surface-container-lowest w-full max-w-lg p-space-lg rounded-xl shadow-2xl flex flex-col gap-space-md border border-outline-variant/30 animate-in fade-in zoom-in-95 max-h-[85vh]">
+            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary-container text-on-primary flex items-center justify-center font-bold text-sm shrink-0">
+                  {(targetFarmerForReviews.fullName || 'Farmer').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex flex-col">
+                  <h3 className="font-headline-md text-headline-md font-bold text-on-surface">
+                    {targetFarmerForReviews.fullName}
+                  </h3>
+                  <span className="text-xs text-on-surface-variant font-medium">
+                    {targetFarmerForReviews.email}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewsModalOpen(false)}
+                className="text-on-surface-variant hover:text-on-surface text-lg cursor-pointer"
+                aria-label={t('accessibility.closeDialog')}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Score Banner */}
+            <div className="flex items-center justify-between p-3.5 bg-surface rounded-xl border border-outline-variant/20">
+              <div className="flex flex-col">
+                <span className="text-xs text-on-surface-variant font-medium">{t('farmerRating.overallRating', 'Overall Rating')}</span>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-amber-500 text-lg leading-none">★</span>
+                  <span className="text-lg font-bold text-on-surface">
+                    {typeof targetFarmerForReviews.averageRating === 'number' ? targetFarmerForReviews.averageRating.toFixed(1) : '5.0'}
+                  </span>
+                  <span className="text-xs text-on-surface-variant font-normal">
+                    / 5.0
+                  </span>
+                </div>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-surface-container text-secondary">
+                {t('farmerRating.basedOnReviews', '{count} Reviews', { count: formatNumber(farmerReviews.length) })}
+              </span>
+            </div>
+
+            {/* Reviews List */}
+            <div className="flex flex-col gap-3 overflow-y-auto max-h-[45vh] pr-1">
+              {reviewsLoading ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2 text-on-surface-variant">
+                  <span className="w-6 h-6 rounded-full border-2 border-primary border-t-transparent animate-spin inline-block" />
+                  <span className="text-xs font-medium">{t('common.loading')}</span>
+                </div>
+              ) : farmerReviews.length === 0 ? (
+                <div className="py-8 text-center flex flex-col items-center justify-center gap-2 text-on-surface-variant">
+                  <span className="material-symbols-outlined text-[32px] text-outline-variant">rate_review</span>
+                  <p className="text-xs font-medium">{t('farmerRating.noReviewsYet', 'No reviews or ratings recorded yet for this farmer.')}</p>
+                </div>
+              ) : (
+                farmerReviews.map((r) => (
+                  <div
+                    key={r.ratingId || r.id}
+                    className="p-3 rounded-lg bg-surface border border-outline-variant/20 flex flex-col gap-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-xs text-on-surface">
+                          {r.ownerName || 'Farm Owner'}
+                        </span>
+                        {r.fieldName && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-secondary font-medium">
+                            {r.fieldName}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-on-surface-variant">
+                        {r.createdAt ? formatDate(r.createdAt) : ''}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-amber-500 text-xs">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <span key={i} className={i < r.rating ? 'text-amber-500' : 'text-outline-variant/40'}>
+                          ★
+                        </span>
+                      ))}
+                      <span className="ml-1 text-[11px] font-bold text-on-surface">
+                        {r.rating}.0
+                      </span>
+                    </div>
+
+                    {r.feedback && (
+                      <p className="text-xs text-on-surface-variant leading-relaxed bg-surface-container-lowest p-2 rounded border border-outline-variant/10">
+                        "{r.feedback}"
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="flex items-center justify-between pt-space-xs border-t border-outline-variant/20">
+              {fields.some((f) => getFieldAssignedWorkers(f).some((w) => w.farmerId === targetFarmerForReviews.uid)) ||
+              hiredFarmerIds.has(targetFarmerForReviews.uid) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewsModalOpen(false);
+                    handleOpenRateModal(targetFarmerForReviews);
+                  }}
+                  className="h-8 px-3 rounded-lg bg-primary text-on-primary text-xs font-semibold hover:bg-primary-container transition-all flex items-center gap-1 cursor-pointer shadow-2xs"
+                >
+                  <span className="material-symbols-outlined text-[15px]">rate_review</span>
+                  <span>{t('farmerRating.rateAndCommentFarmer', 'Rate & Comment on Farmer')}</span>
+                </button>
+              ) : (
+                <span className="text-[11px] text-on-surface-variant flex items-center gap-1 italic">
+                  <span className="material-symbols-outlined text-[14px] text-primary">info</span>
+                  <span>{t('farmerRating.onlyHiredCanRate', 'Only owners who hired this farmer can rate.')}</span>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setReviewsModalOpen(false)}
+                className="h-8 px-4 rounded-lg bg-surface-container text-on-surface text-xs font-semibold hover:bg-surface-container-high transition-colors cursor-pointer"
+              >
+                {t('common.close')}
               </button>
             </div>
           </div>

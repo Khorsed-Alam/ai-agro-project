@@ -24,12 +24,12 @@ import {
 
 // STEP 1: Firebase Configuration using Vite Environment Variables (with working project fallbacks for cloned repos)
 export const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyC3wiPdZQ3NTocZp6cqjzQb14EIHwzAE9E',
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'agroai-b72ec.firebaseapp.com',
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'agroai-b72ec',
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'agroai-b72ec.firebasestorage.app',
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '498924273287',
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:498924273287:web:f90a357a4c849d8f740222'
+  apiKey: (import.meta as any).env?.VITE_FIREBASE_API_KEY || 'AIzaSyC3wiPdZQ3NTocZp6cqjzQb14EIHwzAE9E',
+  authDomain: (import.meta as any).env?.VITE_FIREBASE_AUTH_DOMAIN || 'agroai-b72ec.firebaseapp.com',
+  projectId: (import.meta as any).env?.VITE_FIREBASE_PROJECT_ID || 'agroai-b72ec',
+  storageBucket: (import.meta as any).env?.VITE_FIREBASE_STORAGE_BUCKET || 'agroai-b72ec.firebasestorage.app',
+  messagingSenderId: (import.meta as any).env?.VITE_FIREBASE_MESSAGING_SENDER_ID || '498924273287',
+  appId: (import.meta as any).env?.VITE_FIREBASE_APP_ID || '1:498924273287:web:f90a357a4c849d8f740222'
 };
 
 export const isFirebaseConfigured = (): boolean => {

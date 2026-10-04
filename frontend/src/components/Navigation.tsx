@@ -34,6 +34,9 @@ export const Navigation: React.FC<NavigationProps> = ({ health, mobileOpen = fal
       key: 'main',
       items: [
         { name: t('navigation.dashboard'), path: '/dashboard', icon: 'home', key: 'dashboard' },
+        userRole === 'farmer'
+          ? { name: t('navigation.workOpportunities'), path: '/farmers', icon: 'travel_explore', key: 'farmers' }
+          : { name: t('navigation.farmers'), path: '/farmers', icon: 'groups', key: 'farmers' },
         { name: t('navigation.oneToOneChat'), path: '/messages', icon: 'chat', key: 'oneToOneChat' },
         { name: t('navigation.myFarm'), path: '/my-farm', icon: 'location_on', key: 'myFarm' },
         { name: t('navigation.fields'), path: '/fields', icon: 'layers', key: 'fields' },
@@ -47,7 +50,6 @@ export const Navigation: React.FC<NavigationProps> = ({ health, mobileOpen = fal
         { name: t('navigation.aiAnalysis'), path: '/ai-analysis', icon: 'memory', key: 'aiAnalysis' },
         { name: t('navigation.diseaseDetection'), path: '/disease-detection', icon: 'filter_center_focus', key: 'diseaseDetection' },
         { name: t('navigation.irrigationPlanner'), path: '/irrigation-planner', icon: 'water_drop', key: 'irrigationPlanner' },
-        { name: t('navigation.algorithmsAndTheory'), path: '/algorithms', icon: 'menu_book', key: 'algorithmsAndTheory' },
       ]
     },
     {

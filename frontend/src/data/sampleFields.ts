@@ -89,7 +89,7 @@ export const AI_MODULES: AIModuleInfo[] = [
     status: 'Foundation Ready',
     week: 1,
     description: 'Irrigation resource allocation with field & pump constraints.',
-    route: '/irrigation'
+    route: '/irrigation-planner'
   },
   {
     id: 'ac3',
@@ -98,7 +98,7 @@ export const AI_MODULES: AIModuleInfo[] = [
     status: 'Foundation Ready',
     week: 1,
     description: 'Arc consistency algorithm for domain reduction in irrigation schedules.',
-    route: '/algorithms'
+    route: '/irrigation-planner'
   },
   {
     id: 'bfs',
@@ -107,7 +107,7 @@ export const AI_MODULES: AIModuleInfo[] = [
     status: 'Foundation Ready',
     week: 1,
     description: 'Uninformed graph search for level-by-level decision path discovery.',
-    route: '/algorithms'
+    route: '/ai-analysis'
   },
   {
     id: 'dfs',
@@ -116,7 +116,7 @@ export const AI_MODULES: AIModuleInfo[] = [
     status: 'Foundation Ready',
     week: 1,
     description: 'Uninformed search for deep diagnostic exploration of farm conditions.',
-    route: '/algorithms'
+    route: '/ai-analysis'
   },
   {
     id: 'astar',
@@ -125,7 +125,7 @@ export const AI_MODULES: AIModuleInfo[] = [
     status: 'Foundation Ready',
     week: 1,
     description: 'Heuristic search using f(n) = g(n) + h(n) for farm tractor pathfinding.',
-    route: '/algorithms'
+    route: '/ai-analysis'
   },
   {
     id: 'minimax',

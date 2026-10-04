@@ -19,6 +19,8 @@ import {
   sendChatMessage,
   subscribeToMessages,
   getRegisteredFarmers,
+  getCachedMessages,
+  getMessageTimeMs,
   ECOSYSTEM_UPDATED_EVENT,
 } from '../services/ecosystem';
 
@@ -52,10 +54,8 @@ export const ChatPage: React.FC = () => {
 
   const loadConversations = useCallback(async () => {
     if (!user?.uid) return;
-    setLoading(true);
     const convs = await getUserConversations(user.uid);
     setConversations(convs);
-    setLoading(false);
   }, [user?.uid]);
 
   const loadFarmers = useCallback(async () => {
@@ -66,10 +66,17 @@ export const ChatPage: React.FC = () => {
   }, [userRole]);
 
   useEffect(() => {
-    loadConversations();
+    setLoading(true);
+    loadConversations().finally(() => setLoading(false));
     loadFarmers();
+
+    // Auto-sync conversation list every 3.5s so new incoming messages update the list without refreshing
+    const convPollInterval = setInterval(loadConversations, 3500);
     window.addEventListener(ECOSYSTEM_UPDATED_EVENT, loadConversations);
-    return () => window.removeEventListener(ECOSYSTEM_UPDATED_EVENT, loadConversations);
+    return () => {
+      clearInterval(convPollInterval);
+      window.removeEventListener(ECOSYSTEM_UPDATED_EVENT, loadConversations);
+    };
   }, [loadConversations, loadFarmers]);
 
   // Subscribe to real-time messages when a conversation is selected
@@ -79,7 +86,16 @@ export const ChatPage: React.FC = () => {
       unsubscribeRef.current = null;
     }
 
-    if (!selectedConv || !user?.uid) return;
+    if (!selectedConv || !user?.uid) {
+      setMessages([]);
+      return;
+    }
+
+    // Instantly load any locally cached messages so previously sent conversation history is available immediately
+    const cached = getCachedMessages(selectedConv.id);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+    }
 
     const unsub = subscribeToMessages(selectedConv.id, user.uid, (msgs) => {
       setMessages(msgs);
@@ -87,7 +103,10 @@ export const ChatPage: React.FC = () => {
     unsubscribeRef.current = unsub;
 
     return () => {
-      unsub();
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
     };
   }, [selectedConv?.id, user?.uid]);
 
@@ -95,6 +114,11 @@ export const ChatPage: React.FC = () => {
     setSelectedConv(conv);
     setSendError('');
     setMessageText('');
+    // Instant history display from cache
+    const cached = getCachedMessages(conv.id);
+    if (cached.length > 0) {
+      setMessages(cached);
+    }
   };
 
   const handleStartConversation = async (farmer: FarmerProfile) => {
@@ -119,27 +143,33 @@ export const ChatPage: React.FC = () => {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!messageText.trim() || !selectedConv || !user?.uid) return;
+    if (sending || !messageText.trim() || !selectedConv || !user?.uid) return;
 
     setSending(true);
     setSendError('');
 
     const receiverId = userRole === 'owner' ? selectedConv.farmerId : selectedConv.ownerId;
+    const textToSend = messageText.trim();
+    setMessageText(''); // Clear input immediately for snappy UX
+
     const result = await sendChatMessage({
       conversationId: selectedConv.id,
       senderId: user.uid,
       senderName: userProfile?.fullName || 'User',
       receiverId,
-      text: messageText.trim(),
+      text: textToSend,
     });
 
     if (result.success) {
-      setMessageText('');
-      // In offline mode, add message manually
       if (result.message) {
-        setMessages((prev) => [...prev, result.message!]);
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === result.message!.id)) return prev;
+          return [...prev, result.message!];
+        });
       }
+      loadConversations();
     } else {
+      setMessageText(textToSend); // Restore if failed
       setSendError(t('chat.failedToSend'));
     }
     setSending(false);
@@ -158,7 +188,8 @@ export const ChatPage: React.FC = () => {
   const formatTime = (timestamp: any): string => {
     if (!timestamp) return '';
     try {
-      const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+      const ms = getMessageTimeMs(timestamp);
+      const date = new Date(ms);
       const now = new Date();
       const diff = now.getTime() - date.getTime();
       if (diff < 60000) return t('common.justNow');
@@ -173,7 +204,8 @@ export const ChatPage: React.FC = () => {
   const formatMessageTime = (timestamp: any): string => {
     if (!timestamp) return '';
     try {
-      const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
+      const ms = getMessageTimeMs(timestamp);
+      const date = new Date(ms);
       return formatDate(date, { hour: '2-digit', minute: '2-digit' });
     } catch {
       return '';

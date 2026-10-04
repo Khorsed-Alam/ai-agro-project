@@ -94,7 +94,12 @@ class SearchRequest(BaseModel):
     start: List[int] = [0, 0]
     goal: List[int] = [2, 3]
 
+class MinimaxRequest(BaseModel):
+    field_name: Optional[str] = "Field D"
+    crop: Optional[str] = "Tomato"
+
 # --- Routes ---
+
 
 @app.get("/api/health")
 def health_check():
@@ -537,9 +542,19 @@ class MessageModel(BaseModel):
     receiverId: str
     text: str
 
+class FarmerRatingModel(BaseModel):
+    farmerId: str
+    farmerName: Optional[str] = "Farmer"
+    ownerId: str
+    ownerName: Optional[str] = "Farm Owner"
+    rating: int = 5
+    feedback: Optional[str] = ""
+    fieldId: Optional[str] = ""
+    fieldName: Optional[str] = ""
+
 @app.get("/api/farmers")
 def get_farmers():
-    """Get all registered farmers with their current assignment status."""
+    """Get all registered farmers with their current assignment status and ratings."""
     return AgroDatabaseService.get_farmers()
 
 @app.get("/api/farmers/available")
@@ -548,6 +563,19 @@ def get_available_farmers():
     all_farmers = AgroDatabaseService.get_farmers()
     available = [f for f in all_farmers if not f.get("isAssigned", False)]
     return available
+
+@app.post("/api/farmers/{farmer_id}/ratings")
+def submit_farmer_rating(farmer_id: str, rating: FarmerRatingModel):
+    """Owner submits a rating and review for a farmer."""
+    data = rating.dict()
+    data["farmerId"] = farmer_id
+    res = AgroDatabaseService.save_farmer_rating(data)
+    return {"success": True, "rating": res}
+
+@app.get("/api/farmers/{farmer_id}/ratings")
+def get_farmer_ratings(farmer_id: str):
+    """Get all ratings and reviews for a farmer."""
+    return AgroDatabaseService.get_farmer_ratings(farmer_id)
 
 
 # --- Assignment Requests ---
@@ -633,6 +661,16 @@ def run_kmeans(req: KMeansRequest):
         rainfall=req.rainfall
     )
 
+@app.get("/api/ai/kmeans")
+def get_kmeans(soil_moisture: float = 45.0, soil_ph: float = 6.5, temperature: float = 28.0, humidity: float = 60.0, rainfall: float = 10.0):
+    return kmeans_svc.predict_cluster(
+        soil_moisture=soil_moisture,
+        soil_ph=soil_ph,
+        temperature=temperature,
+        humidity=humidity,
+        rainfall=rainfall
+    )
+
 @app.post("/api/ai/decision-tree")
 def run_decision_tree(req: DTreeRequest):
     return dtree_svc.predict_recommendation(
@@ -644,12 +682,23 @@ def run_decision_tree(req: DTreeRequest):
         rainfall=req.rainfall
     )
 
+@app.get("/api/ai/decision-tree")
+def get_decision_tree(crop: str = "Tomato", soil_moisture: float = 30.0, soil_ph: float = 6.2, temperature: float = 32.0, humidity: float = 55.0, rainfall: float = 5.0):
+    return dtree_svc.predict_recommendation(
+        crop=crop,
+        soil_moisture=soil_moisture,
+        soil_ph=soil_ph,
+        temperature=temperature,
+        humidity=humidity,
+        rainfall=rainfall
+    )
+
 @app.post("/api/ai/cnn")
 async def run_cnn_disease_detection(file: UploadFile = File(...)):
     contents = await file.read()
     return cnn_svc.classify_leaf_image(contents, filename=file.filename)
 
-@app.post("/api/ai/csp")
+@app.api_route("/api/ai/csp", methods=["GET", "POST"])
 def run_csp_scheduler():
     variables = ["Field_A", "Field_B", "Field_C", "Field_D"]
     domains = {
@@ -702,15 +751,26 @@ def run_search_algorithm(req: SearchRequest):
         "path_cost": len(path) - 1 if path else 0
     }
 
-@app.post("/api/ai/minimax")
-def run_minimax(field_name: str = "Field D", crop: str = "Tomato"):
+@app.get("/api/ai/search")
+def get_search_algorithm(algorithm: str = "astar", start_r: int = 0, start_c: int = 0, goal_r: int = 2, goal_c: int = 3):
+    return run_search_algorithm(SearchRequest(algorithm=algorithm, start=[start_r, start_c], goal=[goal_r, goal_c]))
+
+@app.get("/api/ai/minimax")
+def get_minimax(field_name: str = "Field D", crop: str = "Tomato"):
     return PestRiskMinimax.evaluate(field_name, crop)
 
-@app.post("/api/ai/genetic")
+@app.post("/api/ai/minimax")
+def post_minimax(req: Optional[MinimaxRequest] = None):
+    field_name = req.field_name if req and req.field_name else "Field D"
+    crop = req.crop if req and req.crop else "Tomato"
+    return PestRiskMinimax.evaluate(field_name, crop)
+
+@app.api_route("/api/ai/genetic", methods=["GET", "POST"])
 def run_genetic_optimizer():
     fields = AgroDatabaseService.get_fields()
     optimizer = IrrigationGeneticOptimizer(fields=fields, time_slots=["06:00-07:00", "07:00-08:00", "16:00-17:00", "17:00-18:00"])
     return optimizer.optimize()
+
 
 if __name__ == "__main__":
     import uvicorn

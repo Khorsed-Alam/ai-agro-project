@@ -14,11 +14,20 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "decision_tree_model.pkl")
 
 class DecisionTreeService:
     def __init__(self):
-        self.model = self._load_model()
-        self.is_trained = self.model is not None
+        bundle = self._load_model()
+        if bundle and isinstance(bundle, dict) and 'model' in bundle:
+            self.model = bundle['model']
+            self.crop_mapping = bundle.get('crop_mapping', {})
+            self.feature_list = bundle.get('features', ['crop', 'soil_moisture', 'soil_ph', 'temperature', 'humidity', 'rainfall'])
+            self.is_trained = True
+        else:
+            self.model = None
+            self.crop_mapping = {}
+            self.feature_list = ['crop', 'soil_moisture', 'soil_ph', 'temperature', 'humidity', 'rainfall']
+            self.is_trained = False
 
     def _load_model(self):
-        """Model loading abstraction. Returns scikit-learn DecisionTreeClassifier if model file exists."""
+        """Model loading abstraction. Returns joblib pkl bundle if model file exists."""
         if os.path.exists(MODEL_PATH):
             try:
                 import joblib
@@ -30,12 +39,19 @@ class DecisionTreeService:
     def predict_recommendation(self, crop: str, soil_moisture: float, soil_ph: float, temperature: float, humidity: float, rainfall: float) -> dict:
         if self.is_trained and self.model is not None:
             try:
-                import numpy as np
+                import pandas as pd
+                # Encode crop using stored mapping (fallback: 0)
+                crop_encoded = self.crop_mapping.get(crop, 0)
+                # Build feature row matching the model's training feature list
+                values = [crop_encoded, soil_moisture, soil_ph, temperature, humidity, rainfall]
+                df = pd.DataFrame([values], columns=self.feature_list)
+                raw_pred = self.model.predict(df)
+                rec = str(raw_pred[0]) if raw_pred is not None and len(raw_pred) > 0 else "Apply 45m Center Pivot Cycle"
+                gini = round(float(getattr(self.model, "min_impurity_decrease", 0.12)), 2)
                 status_label = "Trained Model Decision"
                 is_demo = False
-                rec = "Apply 45m Center Pivot Cycle"
-                gini = 0.12
-            except Exception:
+            except Exception as exc:
+                print(f"[DecisionTreeService] predict failed: {exc}")
                 status_label = "Demo / Model Not Trained"
                 is_demo = True
                 rec = "Apply 30m Off-Peak Drip Cycle"
